@@ -1,0 +1,33 @@
+# DWT (Section 0) loss weights.
+# CLI flags (--lam-act, --lam-ll-area, --lam-ll-rob, --no-ll, …) override these values.
+#
+# Per-band area:  Σ_b  λ_area_b * (E_b / E_tot) * mean(m_b)
+# Per-band L_rob: mix only that subband with DWT(background), IDWT, KL vs f(x).
+# Global lambdas.rob: pixel-space abductive on the upsampled mean mask (not per-band).
+
+wavelet: db1
+levels: 1
+disabled_subbands: []   # e.g. [LL]  or pass --no-ll on the CLI
+
+lambdas:
+  act: 10.0
+  ce: 0.0
+  kl: 5.0
+  area: 0.0     # optional uniform extra on all active bands
+  bin: 1.0
+  tv: 0.0
+  rob: 0.0      # pixel-space L_rob on mean(mask); independent of rob_LL/…
+
+band_lambdas:
+  area_LL: 10.0
+  area_LH: 10.0
+  area_HL: 10.0
+  area_HH: 10.0
+  tv_LL: 0.0
+  tv_LH: 0.0
+  tv_HL: 0.0
+  tv_HH: 0.0
+  rob_LL: 0.0
+  rob_LH: 0.0
+  rob_HL: 0.0
+  rob_HH: 0.0

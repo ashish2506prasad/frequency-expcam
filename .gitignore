@@ -1,0 +1,48 @@
+# Python
+__pycache__/
+*.py[cod]
+*$py.class
+*.so
+*.egg-info/
+.eggs/
+dist/
+build/
+.venv/
+venv/
+.env
+.python-version
+
+# Editors / OS
+.idea/
+.vscode/
+*.swp
+.DS_Store
+Thumbs.db
+
+# Jupyter
+.ipynb_checkpoints/
+
+# Slurm / local logs
+slurm_logs/
+*.out
+*.err
+*.log
+
+# Experiment outputs and archives
+expcam_runs/
+expcam_runs_*/
+freq_expcam_fft/
+freq_expcam_fft*/
+*.zip
+
+# Datasets (too large for git)
+trainx/
+trainX1_subset/
+distilgpt2-local/
+
+# Checkpoints / tensors
+*.pt
+*.pth
+*.ckpt
+*.npy
+*.npz

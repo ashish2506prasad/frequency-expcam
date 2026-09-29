@@ -1,0 +1,29 @@
+# Polar FFT (Section 0) — WaveX generative explainer.
+# CLI: --fft-metric energy_conf|energy_rob, --lam-energy, --lam-area, --config
+#
+# Metrics (both logged; --fft-metric picks the checkpoint / greedy-LPF comparison):
+#   p_energy = ||m ⊙ FFT(x)||² / ||FFT(x)||²
+#   HM_conf  = HM(1 − p_energy, conf(e))
+#   HM_rob   = HM(1 − p_energy, conf_rob)   conf_rob = f(IFFT(mX + (1−m)·noise))
+#
+# Minimality: L_energy vs L_area (polar-bin mean), analogous to pixel EXP-CAM L_area.
+
+fft_radial_bins: 16
+fft_angular_bins: 16
+mask_temperature: 0.25
+mask_threshold: 0.5
+noise_scale: 0.1
+n_lpf_radii: 50          # linear r=0…1 samples for LPF vs greedy Δconf plot
+ig_n_cutoffs: 8          # attribution-only IG circular cutoffs
+ig_steps: 32
+fft_metric: energy_conf  # energy_conf | energy_rob
+
+lambdas:
+  act: 10.0
+  ce: 0.0
+  kl: 5.0
+  area: 0.0     # L_area = mean(polar bins)  — pixel-paper analogue
+  energy: 15.0    # L_energy = p_energy
+  bin: 1.0
+  tv: 0.0
+  rob: 5.0        # KL after corrupting dropped Fourier bins with white noise
