@@ -195,7 +195,7 @@ def train_mask_fft(bundle: ClassifierBundle, x: torch.Tensor, cfg: TrainConfig) 
             log(
                 f"  step {t:>4d}/{cfg.steps}  total={loss_total.item():.3f}  "
                 f"act={loss_act.item():.3f}  kl={loss_kl.item():.3f}  "
-                f"area={loss_area.item():.3f}  energy={loss_energy.item():.3f}  "
+                f"energy={loss_energy.item():.3f}  "
                 f"rob={loss_rob.item():.3f}  p_E={100.0 * p_e:.1f}%  "
                 f"HM_conf={ef1_conf:.3f}  HM_rob={ef1_rob:.3f}  top1={'Y' if top1 else 'N'}"
             )
