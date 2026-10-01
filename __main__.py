@@ -21,6 +21,8 @@ USAGE = """EXP-CAM experiments
 Local (from the folder that contains trainX1_subset/ and expcam/):
   python -m expcam eval-set --where local --data-root trainX1_subset --force --out freq_expcam_fft
   python -m expcam 0 --config expcam/configs/fft.yaml --where local --data-root trainX1_subset --out freq_expcam_fft --backbones resnet18 vit_b_16
+  python -m expcam 0 --config expcam/configs/fft.yaml --subset --where local --data-root trainX1_subset --out freq_expcam_fft --backbones resnet18
+  python -m expcam 0 --config expcam/configs/fft.yaml --lam-energy 20 --lam-rob 0 --where local --data-root trainX1_subset --out freq_expcam_fft --backbones resnet18
   python -m expcam 1 --where local --out expcam_runs_wo_ce --backbones resnet18 vit_b_16
   python -m expcam 2 --from-section0-knapsack --where local --out expcam_runs_wo_ce
   python -m expcam 3 --where local --out expcam_runs_wo_ce --backbones resnet18 vit_b_16

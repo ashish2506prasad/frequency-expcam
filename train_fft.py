@@ -21,7 +21,6 @@ ensure_pkg_path()
 from classifiers import ClassifierBundle, run_with_acts
 from fft import FourierPolarMasker
 from losses import (
-    area_loss,
     binarization_loss,
     ce_loss,
     hard_st,
@@ -95,7 +94,7 @@ def train_mask_fft(bundle: ClassifierBundle, x: torch.Tensor, cfg: TrainConfig) 
         log(
             f"  training FFT polar U-Net  steps={cfg.steps}  bins={radial}x{angular}  "
             f"T={temp:g}  metric={metric_name}  λ_energy={cfg.lambdas.get('energy', 0):g}  "
-            f"λ_area={cfg.lambdas.get('area', 0):g}  λ_rob={cfg.lambdas.get('rob', 0):g}  "
+            f"λ_rob={cfg.lambdas.get('rob', 0):g}  λ_kl={cfg.lambdas.get('kl', 0):g}  "
             f"lr={cfg.lr}  seed={cfg.seed}"
         )
 
@@ -118,7 +117,6 @@ def train_mask_fft(bundle: ClassifierBundle, x: torch.Tensor, cfg: TrainConfig) 
         half_soft = fourier.expand_polar_mask(m_soft, x.shape[-2], x.shape[-1])
         p_energy_t = fourier.kept_energy_fraction(coeff, half_soft).mean()
         loss_energy = p_energy_t
-        loss_area = area_loss(m_soft)
         loss_bin = binarization_loss(m_soft)
         loss_tv = x.new_zeros(())
 
@@ -132,7 +130,6 @@ def train_mask_fft(bundle: ClassifierBundle, x: torch.Tensor, cfg: TrainConfig) 
             "act": loss_act,
             "ce": loss_ce,
             "kl": loss_kl,
-            "area": loss_area,
             "energy": loss_energy,
             "bin": loss_bin,
             "tv": loss_tv,
@@ -446,6 +443,7 @@ def lpf_vs_greedy_comparison(
         [r["delta_conf_lpf"] for r in rows],
         [r["delta_conf_greedy"] for r in rows],
         title="Δconf vs circular cutoff radius (same energy)",
+        p_energy=[r["p_energy"] for r in rows],
     )
     return {"rows": rows, "conf_x": conf_x}
 

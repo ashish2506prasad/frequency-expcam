@@ -512,7 +512,10 @@ def plot_lpf_vs_greedy(
     title: str = "",
     delta_lpf_std: Optional[Sequence[float]] = None,
     delta_greedy_std: Optional[Sequence[float]] = None,
+    p_energy: Optional[Sequence[float]] = None,
+    p_energy_std: Optional[Sequence[float]] = None,
 ) -> None:
+    """Δconf vs cutoff radius; right axis is circular-LPF energy as % of ||FFT(x)||²."""
     fig, ax = plt.subplots(figsize=(7.2, 4.4))
     ax.plot(radii, delta_lpf, lw=1.8, color="#4C78A8", label="circular low-pass")
     ax.plot(radii, delta_greedy, lw=1.8, color="#E45756", label="greedy polar bins")
@@ -525,7 +528,19 @@ def plot_lpf_vs_greedy(
     ax.set_xlabel("cutoff radius r (0 = DC, 1 = Nyquist)")
     ax.set_ylabel(r"$\Delta$conf  (conf(x) − conf(filtered))")
     ax.set_title(title or "Low-pass vs greedy (matched energy)")
-    ax.legend(fontsize=9)
+    handles, labels = ax.get_legend_handles_labels()
+    if p_energy is not None:
+        ax2 = ax.twinx()
+        pct = np.asarray(p_energy, dtype=float) * 100.0
+        ax2.plot(radii, pct, lw=1.4, ls="--", color="#72B7B2", label="LPF energy %")
+        if p_energy_std is not None:
+            s = np.asarray(p_energy_std, dtype=float) * 100.0
+            ax2.fill_between(radii, pct - s, pct + s, color="#72B7B2", alpha=0.15)
+        ax2.set_ylabel("LPF energy (% of total)")
+        ax2.set_ylim(0, 100)
+        h2, l2 = ax2.get_legend_handles_labels()
+        handles, labels = handles + h2, labels + l2
+    ax.legend(handles, labels, fontsize=9)
     fig.tight_layout()
     _save(fig, path)
 

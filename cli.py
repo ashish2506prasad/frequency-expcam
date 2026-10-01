@@ -105,14 +105,19 @@ def add_loss_lambda_args(p: argparse.ArgumentParser) -> argparse.ArgumentParser:
     import config as C
 
     defaults = C.DEFAULT_LAMBDAS
-    p.add_argument("--lam-act", type=float, default=None)
-    p.add_argument("--lam-ce", type=float, default=None)
-    p.add_argument("--lam-kl", type=float, default=None)
-    p.add_argument("--lam-area", type=float, default=None)
-    p.add_argument("--lam-energy", type=float, default=None)
-    p.add_argument("--lam-bin", type=float, default=None)
-    p.add_argument("--lam-tv", type=float, default=None)
-    p.add_argument("--lam-rob", type=float, default=None)
+    p.add_argument("--lam-act", type=float, default=None, help="Override YAML λ_act.")
+    p.add_argument("--lam-ce", type=float, default=None, help="Override YAML λ_ce.")
+    p.add_argument("--lam-kl", type=float, default=None, help="Override YAML λ_kl.")
+    p.add_argument(
+        "--lam-area",
+        type=float,
+        default=None,
+        help="Override YAML λ_area (pixel/DWT only; ignored for FFT Section 0).",
+    )
+    p.add_argument("--lam-energy", type=float, default=None, help="Override YAML λ_energy (FFT p_energy).")
+    p.add_argument("--lam-bin", type=float, default=None, help="Override YAML λ_bin.")
+    p.add_argument("--lam-tv", type=float, default=None, help="Override YAML λ_tv.")
+    p.add_argument("--lam-rob", type=float, default=None, help="Override YAML λ_rob.")
     for suffix in ("ll", "lh", "hl", "hh"):
         p.add_argument(f"--lam-{suffix}-area", type=float, default=None, help=f"DWT: L_area on {suffix.upper()} subband mask.")
         p.add_argument(f"--lam-{suffix}-tv", type=float, default=None, help=f"DWT: L_tv on {suffix.upper()} subband mask.")
@@ -195,6 +200,9 @@ def fft_settings_from_args(args) -> dict:
     yaml_path = getattr(args, "config", None) or C.DEFAULT_FFT_YAML
     parsed = C.parse_fft_yaml(yaml_path)
     lambdas = lambdas_from_args(args, base=parsed["lambdas"])
+    lambdas["area"] = 0.0
+    if getattr(args, "lam_area", None) is not None:
+        print("[fft] ignoring --lam-area (area loss is not used in polar FFT)", flush=True)
     metric = getattr(args, "fft_metric", None) or parsed["fft_metric"]
     if metric not in C.FFT_METRICS:
         metric = "energy_conf"

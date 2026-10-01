@@ -1,12 +1,12 @@
 # Polar FFT (Section 0) — WaveX generative explainer.
-# CLI: --fft-metric energy_conf|energy_rob, --lam-energy, --lam-area, --config
+# CLI overrides YAML: --lam-act --lam-ce --lam-kl --lam-energy --lam-bin --lam-tv --lam-rob
+#   e.g. --lam-energy 20 --lam-rob 0
+#   Area loss is not used in FFT (polar-bin mean is not spectral energy).
 #
 # Metrics (both logged; --fft-metric picks the checkpoint / greedy-LPF comparison):
 #   p_energy = ||m ⊙ FFT(x)||² / ||FFT(x)||²
 #   HM_conf  = HM(1 − p_energy, conf(e))
 #   HM_rob   = HM(1 − p_energy, conf_rob)   conf_rob = f(IFFT(mX + (1−m)·noise))
-#
-# Minimality: L_energy vs L_area (polar-bin mean), analogous to pixel EXP-CAM L_area.
 
 fft_radial_bins: 16
 fft_angular_bins: 16
@@ -22,7 +22,6 @@ lambdas:
   act: 10.0
   ce: 0.0
   kl: 5.0
-  area: 0.0     # L_area = mean(polar bins)  — pixel-paper analogue
   energy: 15.0    # L_energy = p_energy
   bin: 1.0
   tv: 0.0

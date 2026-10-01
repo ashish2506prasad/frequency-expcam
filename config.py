@@ -87,7 +87,7 @@ DEFAULT_LAMBDAS_FFT = {
     "act": 10.0,
     "ce": 0.0,
     "kl": 5.0,
-    "area": 15.0,
+    "area": 0.0,  # unused in polar FFT (kept so the lambda dict is complete)
     "energy": 10.0,
     "bin": 1.0,
     "tv": 0.0,
@@ -410,9 +410,11 @@ def parse_fft_yaml(path=None) -> dict:
         data = load_yaml_file(path)
         nested = data.get("lambdas") or {}
         for k, v in nested.items():
-            if k in lambdas and v is not None:
+            if k in lambdas and v is not None and k != "area":
                 lambdas[k] = float(v)
         for src, dst in _YAML_LAMBDA_KEYS.items():
+            if dst == "area":
+                continue
             if data.get(src) is not None:
                 lambdas[dst] = float(data[src])
         radial = int(data.get("fft_radial_bins", radial))
@@ -426,6 +428,7 @@ def parse_fft_yaml(path=None) -> dict:
         metric = str(data.get("fft_metric", metric))
     if metric not in FFT_METRICS:
         metric = "energy_conf"
+    lambdas["area"] = 0.0
     return {
         "lambdas": lambdas,
         "fft_radial_bins": radial,

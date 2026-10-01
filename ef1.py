@@ -246,7 +246,7 @@ def _plot_fft_freq_bias(out_root, section, backbones, subset) -> None:
 
 
 def _plot_fft_lpf_mean(out_root, section, backbone, subset) -> None:
-    curves_l, curves_g, radii = [], [], None
+    curves_l, curves_g, curves_e, radii = [], [], [], None
     for rec in subset:
         js = run_dir(out_root, section, backbone, "ef1_full", rec["id"]) / "best_ef1" / "lpf_vs_greedy.json"
         if not js.exists():
@@ -259,12 +259,14 @@ def _plot_fft_lpf_mean(out_root, section, backbone, subset) -> None:
             radii = [r["radius"] for r in rows]
         curves_l.append([r["delta_conf_lpf"] for r in rows])
         curves_g.append([r["delta_conf_greedy"] for r in rows])
+        curves_e.append([r.get("p_energy", 0.0) for r in rows])
     if not curves_l or radii is None:
         return
     import numpy as np
 
     arr_l = np.asarray(curves_l, dtype=float)
     arr_g = np.asarray(curves_g, dtype=float)
+    arr_e = np.asarray(curves_e, dtype=float) if curves_e else None
     fig_dir = figure_dir(out_root, section, backbone)
     plot_lpf_vs_greedy(
         fig_dir / "Fig0_lpf_vs_greedy_mean.png",
@@ -274,6 +276,8 @@ def _plot_fft_lpf_mean(out_root, section, backbone, subset) -> None:
         title=f"Mean Δconf vs r — {backbone} (n={len(curves_l)})",
         delta_lpf_std=arr_l.std(axis=0).tolist(),
         delta_greedy_std=arr_g.std(axis=0).tolist(),
+        p_energy=arr_e.mean(axis=0).tolist() if arr_e is not None and arr_e.size else None,
+        p_energy_std=arr_e.std(axis=0).tolist() if arr_e is not None and arr_e.size else None,
     )
     log(f"[figures] {backbone}: mean LPF vs greedy -> {fig_dir / 'Fig0_lpf_vs_greedy_mean.png'}")
 
@@ -293,14 +297,22 @@ def _plot_ef1_for_backbone(out_root, section, backbone, subset, hline) -> dict:
     return series
 
 
+def _apply_subset_args(args) -> None:
+    """--subset: 2 images/class. --quick still wins (1 image, 40 steps)."""
+    if getattr(args, "quick", False):
+        args.section0_per_class = 1
+        args.section0_slots = [0]
+    elif getattr(args, "subset", False):
+        args.section0_per_class = 2
+        args.section0_slots = [0, 1]
+
+
 def run_section0(args) -> None:
     eval_set, _images, device = resolve_run(args)
     out_root = args.out
     section = _section_name(args)
     steps = args.steps
-    if getattr(args, "quick", False):
-        args.section0_per_class = 1
-        args.section0_slots = [0]
+    _apply_subset_args(args)
     subset = section0_image_records(
         eval_set,
         per_class=args.section0_per_class,
@@ -449,6 +461,7 @@ def run_section0_figures_only(args) -> None:
     eval_set, _, device = resolve_run(args)
     out_root = args.out
     section = _section_name(args)
+    _apply_subset_args(args)
     subset = section0_image_records(
         eval_set,
         per_class=args.section0_per_class,
@@ -523,10 +536,15 @@ def main(argv=None):
         help="Override snapshot steps (default: every 40 from step 40).",
     )
     p.add_argument(
+        "--subset",
+        action="store_true",
+        help="Small run: 2 images per class (eval-set slots 0 and 1). Default is 10 per class.",
+    )
+    p.add_argument(
         "--section0-per-class",
         type=int,
         default=SECTION0_PER_CLASS,
-        help="Images per class for Section 0 training (default: 10).",
+        help="Images per class for Section 0 training (default: 10). Overridden by --subset / --quick.",
     )
     p.add_argument(
         "--section0-slots",
