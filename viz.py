@@ -430,6 +430,9 @@ def plot_dwt_freq_bias_bars(
     kept_by_backbone: Dict[str, Dict[str, float]],
     title: str,
     bands: Sequence[str] = ("LL", "LH", "HL", "HH"),
+    std_by_backbone: Optional[Dict[str, Dict[str, float]]] = None,
+    xlabel: str = "frequency band",
+    ylabel: str = "retained energy / band energy (%)",
 ) -> None:
     """Grouped bars: for each subband, fraction of that band's energy kept, one bar per backbone."""
     bands = list(bands)
@@ -441,6 +444,9 @@ def plot_dwt_freq_bias_bars(
     for i, name in enumerate(models):
         vals = [100.0 * float(kept_by_backbone[name].get(b, 0.0)) for b in bands]
         offset = (i - (n - 1) / 2.0) * width
+        yerr = None
+        if std_by_backbone and name in std_by_backbone:
+            yerr = [100.0 * float(std_by_backbone[name].get(b, 0.0)) for b in bands]
         ax.bar(
             x + offset,
             vals,
@@ -449,12 +455,15 @@ def plot_dwt_freq_bias_bars(
             color=BACKBONE_BAR_COLORS.get(name),
             edgecolor="white",
             linewidth=0.4,
+            yerr=yerr,
+            capsize=3 if yerr is not None else 0,
+            error_kw={"elinewidth": 1.0, "ecolor": "#333333"},
         )
     ax.set_xticks(x)
     ax.set_xticklabels(list(bands))
-    ax.set_ylabel("kept energy / band energy (%)")
+    ax.set_ylabel(ylabel)
     ax.set_ylim(0, 105)
-    ax.set_xlabel("frequency band")
+    ax.set_xlabel(xlabel)
     ax.set_title(title)
     ax.legend(fontsize=9, loc="best")
     fig.tight_layout()
@@ -474,13 +483,30 @@ def plot_fft_wavex_grid(
     mask_full_soft: np.ndarray,
     mask_full_hard: np.ndarray,
     title: str = "",
+    conf_x: Optional[float] = None,
+    conf_e: Optional[float] = None,
+    p_energy: Optional[float] = None,
 ) -> None:
-    """WaveX-style polar FFT explanation figure (soft/hard + spectra)."""
+    """WaveX-style polar FFT explanation figure (soft/hard + spectra).
+
+    ``p_energy`` is retained energy: ||m ⊙ FFT(x)||² / ||FFT(x)||².
+    """
+    orig = "Original"
+    if conf_x is not None:
+        orig = f"Original\nconf(x)={conf_x:.3f}"
+    soft = "Soft explanation"
+    hard = "Hard explanation"
+    if conf_e is not None:
+        soft = f"Soft explanation\nconf(e)={conf_e:.3f}"
+        hard = f"Hard explanation\nconf(e)={conf_e:.3f}"
+    if p_energy is not None:
+        pe = f"retained p_E={100.0 * p_energy:.1f}%"
+        hard = f"{hard}\n{pe}" if conf_e is not None else f"Hard explanation\n{pe}"
     fig, axes = plt.subplots(3, 4, figsize=(14, 10.5))
     panels = [
-        (axes[0, 0], x_img, "Original", None),
-        (axes[0, 1], e_soft, "Soft explanation", None),
-        (axes[0, 2], e_hard, "Hard explanation", None),
+        (axes[0, 0], x_img, orig, None),
+        (axes[0, 1], e_soft, soft, None),
+        (axes[0, 2], e_hard, hard, None),
         (axes[0, 3], m_soft_polar, "Soft polar mask", "inferno"),
         (axes[1, 0], mag_x, "FFT log-mag (original)", "inferno"),
         (axes[1, 1], mag_soft, "FFT log-mag (soft)", "inferno"),

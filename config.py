@@ -403,8 +403,6 @@ def parse_fft_yaml(path=None) -> dict:
     thresh = 0.5
     noise = 0.1
     n_lpf = 50
-    ig_cut = 8
-    ig_steps = 32
     metric = "energy_conf"
     if path.is_file():
         data = load_yaml_file(path)
@@ -423,8 +421,6 @@ def parse_fft_yaml(path=None) -> dict:
         thresh = float(data.get("mask_threshold", thresh))
         noise = float(data.get("noise_scale", noise))
         n_lpf = int(data.get("n_lpf_radii", n_lpf))
-        ig_cut = int(data.get("ig_n_cutoffs", ig_cut))
-        ig_steps = int(data.get("ig_steps", ig_steps))
         metric = str(data.get("fft_metric", metric))
     if metric not in FFT_METRICS:
         metric = "energy_conf"
@@ -437,8 +433,6 @@ def parse_fft_yaml(path=None) -> dict:
         "mask_thresh": thresh,
         "fft_noise_scale": noise,
         "n_lpf_radii": n_lpf,
-        "ig_n_cutoffs": ig_cut,
-        "ig_steps": ig_steps,
         "fft_metric": metric,
         "path": str(path),
     }

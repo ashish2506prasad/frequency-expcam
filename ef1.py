@@ -1,8 +1,8 @@
-"""Section 0 — polar FFT EXP-CAM (generative + attribution-only IG).
+"""Section 0 — polar FFT EXP-CAM (generative).
 
 Trains FourierMaskNet for SECTION0_STEPS with CE off by default, logs
-HM(1−p_E, conf_e) and HM(1−p_E, conf_rob), checkpoints the CLI/YAML metric,
-and writes WaveX-style FFT figures plus LPF vs greedy Δconf curves.
+HM(1−p_E, conf_e) and HM(1−p_E, conf_rob), checkpoints the step with lowest
+retained p_energy, and writes WaveX-style FFT figures plus LPF vs greedy curves.
 """
 
 from __future__ import annotations
@@ -206,43 +206,75 @@ def _plot_fft_grids_for_backbone(out_root, section, backbone, subset) -> None:
         if src.exists():
             copy2(src, fig_dir / f"Fig0_fft_wavex_{rec['id']}_{cname}.png")
             n += 1
-        ig = out_dir / "attribution_ig" / "Fig0_fft_ig.png"
-        if ig.exists():
-            copy2(ig, fig_dir / f"Fig0_fft_ig_{rec['id']}_{cname}.png")
         lpf = out_dir / "best_ef1" / "Fig0_lpf_vs_greedy.png"
         if lpf.exists():
             copy2(lpf, fig_dir / f"Fig0_lpf_vs_greedy_{rec['id']}_{cname}.png")
     if n:
-        log(f"[figures] {backbone}: FFT WaveX grids + IG + LPF -> {fig_dir}")
+        log(f"[figures] {backbone}: FFT WaveX grids + LPF -> {fig_dir}")
 
 
 def _plot_fft_freq_bias(out_root, section, backbones, subset) -> None:
+    """Mean retained energy per radial third, averaged over images (not one plot per image).
+
+    Bands use Nyquist-normalized radius r ∈ [0, 1]:
+      low [0, 1/3), mid [1/3, 2/3), high [2/3, 1].
+    Each value is ||m ⊙ 1_band ⊙ FFT(x)||² / ||1_band ⊙ FFT(x)||².
+    """
     pair = [b for b in ("resnet18", "vit_b_16") if b in backbones] or list(backbones)
     dest = Path(out_root) / section / "figures_freq_bias"
-    n = 0
+    bands = ("low", "mid", "high")
+    per_bb = {bb: {b: [] for b in bands} for bb in pair}
+    n_img = {bb: 0 for bb in pair}
     for rec in subset:
-        kept = {}
         for bb in pair:
             met = run_dir(out_root, section, bb, "ef1_full", rec["id"]) / "metrics.json"
             if not met.exists():
                 continue
-            data = load_json(met)
-            radial = data.get("radial_kept") or {}
-            if radial:
-                kept[bb] = radial
-        if not kept:
+            radial = load_json(met).get("radial_kept") or {}
+            if not radial:
+                continue
+            n_img[bb] += 1
+            for b in bands:
+                per_bb[bb][b].append(float(radial.get(b, 0.0)))
+    mean_kept, std_kept = {}, {}
+    for bb in pair:
+        if n_img[bb] == 0:
             continue
-        cname = rec["class_name"].replace(" ", "_")
-        plot_dwt_freq_bias_bars(
-            dest / f"Fig0_freq_bias_{rec['id']}_{cname}.png",
-            kept,
-            title=f"Radial frequency bias — {rec['class_name']} (img {rec['id']})",
-            bands=("low", "mid", "high"),
-        )
-        save_json(dest / f"Fig0_freq_bias_{rec['id']}_{cname}.json", {"image_id": rec["id"], "kept_energy_frac": kept})
-        n += 1
-    if n:
-        log(f"[figures] FFT freq-bias bars -> {dest}  ({n} images)")
+        mean_kept[bb] = {b: float(sum(per_bb[bb][b]) / len(per_bb[bb][b])) for b in bands}
+        std_kept[bb] = {}
+        for b in bands:
+            vals = per_bb[bb][b]
+            if len(vals) < 2:
+                std_kept[bb][b] = 0.0
+            else:
+                mu = mean_kept[bb][b]
+                std_kept[bb][b] = float((sum((v - mu) ** 2 for v in vals) / (len(vals) - 1)) ** 0.5)
+    if not mean_kept:
+        return
+    plot_dwt_freq_bias_bars(
+        dest / "Fig0_freq_bias_mean.png",
+        mean_kept,
+        title="Mean retained energy per radial band (error bars = std over images)",
+        bands=bands,
+        std_by_backbone=std_kept,
+        xlabel="radial band  (low r<1/3, mid 1/3–2/3, high r>2/3)",
+        ylabel="retained energy / band energy (%)",
+    )
+    save_json(
+        dest / "Fig0_freq_bias_mean.json",
+        {
+            "n_images": n_img,
+            "bands": {
+                "low": "[0, 1/3)",
+                "mid": "[1/3, 2/3)",
+                "high": "[2/3, 1]",
+                "note": "Nyquist-normalized radius; retained = ||m ⊙ 1_band ⊙ X||² / ||1_band ⊙ X||²",
+            },
+            "mean_kept_frac": mean_kept,
+            "std_kept_frac": std_kept,
+        },
+    )
+    log(f"[figures] FFT mean freq-bias -> {dest / 'Fig0_freq_bias_mean.png'}  n={n_img}")
 
 
 def _plot_fft_lpf_mean(out_root, section, backbone, subset) -> None:
@@ -383,8 +415,6 @@ def run_section0(args) -> None:
                 fft_noise_scale=float(fft_cfg.get("fft_noise_scale", 0.1)),
                 fft_metric=str(fft_cfg.get("fft_metric", "energy_conf")),
                 n_lpf_radii=int(fft_cfg.get("n_lpf_radii", 50)),
-                ig_n_cutoffs=int(fft_cfg.get("ig_n_cutoffs", 8)),
-                ig_steps=int(fft_cfg.get("ig_steps", 32)),
             )
             extra = {
                 "protocol": "ef1_fft" if use_fft else ("ef1_dwt" if args.dwt else "ef1"),
@@ -401,7 +431,6 @@ def run_section0(args) -> None:
                     skip_existing=args.skip_existing,
                     device=device,
                     extra_metrics=extra,
-                    run_ig=not getattr(args, "no_ig", False),
                 )
             else:
                 row = train_fn(
@@ -422,7 +451,9 @@ def run_section0(args) -> None:
                 if "ef1_energy" in curve[0]:
                     row["ef1_energy_final"] = curve[-1]["ef1_energy"]
                     row["ef1_energy_max"] = max(p["ef1_energy"] for p in curve)
-                    row["p_energy_at_best"] = max(curve, key=lambda p: p["ef1_energy"]).get("p_energy")
+                    best_pe = min(curve, key=lambda p: p.get("p_energy", 1.0))
+                    row["p_energy_at_best"] = best_pe.get("p_energy")
+                    row["best_energy_step"] = best_pe.get("step")
             rows.append(row)
 
         _plot_ef1_for_backbone(out_root, section, backbone, subset, args.ef1_threshold)
@@ -500,12 +531,7 @@ def main(argv=None):
         "--fft-metric",
         choices=["energy_conf", "energy_rob"],
         default=None,
-        help="Checkpoint + LPF/greedy comparison: HM(1−p_E, conf_e) or HM(1−p_E, conf_rob). Default from YAML.",
-    )
-    p.add_argument(
-        "--no-ig",
-        action="store_true",
-        help="Skip attribution-only Fourier IG after generative training.",
+        help="Logged HM variant (HM_conf vs HM_rob). Checkpoint is always the step with lowest retained p_E.",
     )
     p.add_argument(
         "--pixel",

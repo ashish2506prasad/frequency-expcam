@@ -41,18 +41,13 @@ class FFTTrainResult(TrainResult):
     best_ef1_rob: float = 0.0
     conf_e: float = 0.0
     conf_rob: float = 0.0
+    conf_x: float = 0.0
     radial_kept: Dict[str, float] = field(default_factory=dict)
     fft_metric: str = "energy_conf"
     n_lpf_radii: int = 50
     noise_scale: float = 0.1
     radial_bins: int = 16
     angular_bins: int = 16
-
-
-def _metric_value(name: str, ef1_conf: float, ef1_rob: float) -> float:
-    if name == "energy_rob":
-        return ef1_rob
-    return ef1_conf
 
 
 def train_mask_fft(bundle: ClassifierBundle, x: torch.Tensor, cfg: TrainConfig) -> FFTTrainResult:
@@ -82,7 +77,7 @@ def train_mask_fft(bundle: ClassifierBundle, x: torch.Tensor, cfg: TrainConfig) 
     p_e = 0.0
     ef1_conf = 0.0
     ef1_rob = 0.0
-    best_score = -1.0
+    best_score = float("inf")
     best_step = 0
     best_soft: Optional[torch.Tensor] = None
     best_hard: Optional[torch.Tensor] = None
@@ -160,7 +155,7 @@ def train_mask_fft(bundle: ClassifierBundle, x: torch.Tensor, cfg: TrainConfig) 
                 ef1_conf = ef1_new_version(conf_e, p_e)
                 ef1_rob = ef1_new_version(conf_rob, p_e)
                 d_conf = confidence_delta(logits_x, logits_eh)
-                score = _metric_value(metric_name, ef1_conf, ef1_rob)
+                score = p_e
                 row = {
                     "step": t,
                     "ef1": ef1_conf,
@@ -177,7 +172,7 @@ def train_mask_fft(bundle: ClassifierBundle, x: torch.Tensor, cfg: TrainConfig) 
                 }
                 if track:
                     ef1_curve.append(row)
-                if cfg.keep_best_ef1 and score >= best_score:
+                if cfg.keep_best_ef1 and p_e < best_score:
                     best_score = score
                     best_step = t
                     best_soft = m_soft.detach().clone()
@@ -211,9 +206,9 @@ def train_mask_fft(bundle: ClassifierBundle, x: torch.Tensor, cfg: TrainConfig) 
         conf_rob = float(best_row.get("conf_rob", 0.0))
         if cfg.log_every:
             log(
-                f"  best {metric_name}={best_score:.4f} at step {best_step}  "
-                f"p_E={100.0 * p_e:.1f}%  HM_conf={best_row.get('ef1_conf', 0):.3f}  "
-                f"HM_rob={best_row.get('ef1_rob', 0):.3f}"
+                f"  best (min retained p_E)={best_score:.4f} at step {best_step}  "
+                f"p_E={100.0 * p_e:.1f}% of ||FFT(x)||²  conf(x)={conf_x:.3f}  "
+                f"conf(e)={best_row.get('conf_e', 0):.3f}"
             )
     else:
         mask_net.eval()
@@ -229,13 +224,14 @@ def train_mask_fft(bundle: ClassifierBundle, x: torch.Tensor, cfg: TrainConfig) 
             e_rob = fourier.perturb_explanation(x, m_hard, noise_scale=noise_scale)
             conf_e = class_confidence(logits_eh, y)
             conf_rob = class_confidence(bundle.model(e_rob), y)
-            best_score = _metric_value(
-                metric_name, ef1_new_version(conf_e, p_e), ef1_new_version(conf_rob, p_e)
-            )
+            best_score = p_e
             best_step = cfg.steps
             best_row = {
                 "ef1_conf": ef1_new_version(conf_e, p_e),
                 "ef1_rob": ef1_new_version(conf_rob, p_e),
+                "p_energy": p_e,
+                "conf_e": conf_e,
+                "conf_x": conf_x,
             }
 
     with torch.no_grad():
@@ -292,6 +288,7 @@ def train_mask_fft(bundle: ClassifierBundle, x: torch.Tensor, cfg: TrainConfig) 
         best_ef1_rob=float(best_row.get("ef1_rob", 0.0)),
         conf_e=float(conf_e),
         conf_rob=float(conf_rob),
+        conf_x=float(conf_x),
         radial_kept=radial_kept,
         fft_metric=metric_name,
         n_lpf_radii=n_lpf,
@@ -320,8 +317,8 @@ def _save_fft_snapshot(x, m_hard, e, fourier, out_dir, step, row) -> None:
         e_np,
         labels=("x (original)", "m polar (hard)", "e (IFFT)"),
         suptitle=(
-            f"step={step}  HM_conf={row['ef1_conf']:.3f}  HM_rob={row['ef1_rob']:.3f}  "
-            f"p_E={100 * row['p_energy']:.1f}%  Δconf={row['delta_conf']:.3f}"
+            f"step={step}  conf(x)={row['conf_x']:.3f}  conf(e)={row['conf_e']:.3f}  "
+            f"retained p_E={100 * row['p_energy']:.1f}% of ||FFT(x)||²  Δconf={row['delta_conf']:.3f}"
         ),
     )
     Image.fromarray((np.clip(e_np, 0, 1) * 255).astype(np.uint8)).save(dest / "e.png")
@@ -361,6 +358,9 @@ def save_fft_best_expl(
         full_h = torch.fft.fftshift(
             fourier.one_sided_to_full(half_h, width=x.shape[-1]), dim=(-2, -1)
         )
+    p_e = float(best_row.get("p_energy", 0.0) or 0.0)
+    conf_x = float(best_row.get("conf_x", 0.0) or 0.0)
+    conf_e = float(best_row.get("conf_e", 0.0) or 0.0)
     plot_fft_wavex_grid(
         dest / "fft_expl_grid.png",
         panel_original(x),
@@ -374,11 +374,13 @@ def save_fft_best_expl(
         full_s[0, 0].detach().cpu().numpy(),
         full_h[0, 0].detach().cpu().numpy(),
         title=(
-            f"Best {metric_name} @{best_step}  "
-            f"HM_conf={best_row.get('ef1_conf', 0):.3f}  "
-            f"HM_rob={best_row.get('ef1_rob', 0):.3f}  "
-            f"p_E={100 * best_row.get('p_energy', 0):.1f}%"
+            f"Lowest retained energy @ step {best_step}  "
+            f"conf(x)={conf_x:.3f}  conf(e)={conf_e:.3f}  "
+            f"retained p_E={100.0 * p_e:.1f}% of ||FFT(x)||²"
         ),
+        conf_x=conf_x,
+        conf_e=conf_e,
+        p_energy=p_e,
     )
     Image.fromarray((np.clip(panel_original(e), 0, 1) * 255).astype(np.uint8)).save(dest / "e.png")
     save_json(

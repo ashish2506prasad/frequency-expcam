@@ -183,7 +183,12 @@ class FourierPolarMasker(nn.Module):
         half_mask: torch.Tensor,
         n_bands: int = 3,
     ) -> Dict[str, float]:
-        """Kept energy / band energy for low / mid / high radius thirds."""
+        """Kept energy / band energy for low / mid / high radius thirds.
+
+        Radius is Nyquist-normalized to [0, 1] (DC → image corner).
+        low = r ∈ [0, 1/3), mid = [1/3, 2/3), high = [2/3, 1].
+        Value is ||m ⊙ 1_band ⊙ X||² / ||1_band ⊙ X||² (retained fraction of that band).
+        """
         h, w = coeff.shape[-2], 2 * (coeff.shape[-1] - 1)
         rmap = self.radius_map(coeff.shape[-2], w, coeff.device)
         names = ("low", "mid", "high") if n_bands == 3 else tuple(f"r{i}" for i in range(n_bands))

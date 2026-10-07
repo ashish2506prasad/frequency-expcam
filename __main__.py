@@ -40,7 +40,6 @@ _SECTION_MODS = {
     "3": "comparisons",
     "4": "robustness",
     "5": "auto_weights",
-    "6": "llm",
 }
 
 

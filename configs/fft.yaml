@@ -3,10 +3,11 @@
 #   e.g. --lam-energy 20 --lam-rob 0
 #   Area loss is not used in FFT (polar-bin mean is not spectral energy).
 #
-# Metrics (both logged; --fft-metric picks the checkpoint / greedy-LPF comparison):
-#   p_energy = ||m ⊙ FFT(x)||² / ||FFT(x)||²
+# Checkpoint: keep the training step with lowest kept energy
+#   p_energy = ||m ⊙ FFT(x)||² / ||FFT(x)||²   (retained fraction of total spectrum energy)
+# Logged (not used for selection):
 #   HM_conf  = HM(1 − p_energy, conf(e))
-#   HM_rob   = HM(1 − p_energy, conf_rob)   conf_rob = f(IFFT(mX + (1−m)·noise))
+#   HM_rob   = HM(1 − p_energy, conf_rob)
 
 fft_radial_bins: 16
 fft_angular_bins: 16
@@ -14,9 +15,6 @@ mask_temperature: 0.25
 mask_threshold: 0.5
 noise_scale: 0.1
 n_lpf_radii: 50          # linear r=0…1 samples for LPF vs greedy Δconf plot
-ig_n_cutoffs: 8          # attribution-only IG circular cutoffs
-ig_steps: 32
-fft_metric: energy_conf  # energy_conf | energy_rob
 
 lambdas:
   act: 10.0

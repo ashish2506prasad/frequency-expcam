@@ -205,7 +205,6 @@ def maybe_train_and_eval_fft(
     skip_existing: bool,
     device: torch.device,
     extra_metrics: Optional[Dict] = None,
-    run_ig: bool = True,
 ) -> Dict:
     metrics_path = out_dir / "metrics.json"
     tag = (extra_metrics or {}).get("config") or (extra_metrics or {}).get("protocol") or ""
@@ -249,6 +248,7 @@ def maybe_train_and_eval_fft(
         "best_ef1_step": result.best_ef1_step,
         "conf_e": result.conf_e,
         "conf_rob": result.conf_rob,
+        "conf_x": result.conf_x,
         "n_lpf_radii": result.n_lpf_radii,
         "radial_bins": result.radial_bins,
         "angular_bins": result.angular_bins,
@@ -258,9 +258,9 @@ def maybe_train_and_eval_fft(
     save_json(metrics_path, payload)
     log(
         f"[done]  img={rec['id']}  {result.seconds:.1f}s  "
-        f"p_E={100.0 * result.p_energy:.1f}%  p_bins={100.0 * result.p_bins:.1f}%  "
-        f"HM_conf={result.best_ef1_conf:.3f}  HM_rob={result.best_ef1_rob:.3f}  "
-        f"metric={result.fft_metric}={result.best_ef1:.3f}"
+        f"retained p_E={100.0 * result.p_energy:.1f}% of ||FFT(x)||²  "
+        f"p_bins={100.0 * result.p_bins:.1f}%  conf(x)={result.conf_x:.3f}  "
+        f"conf(e)={result.conf_e:.3f}  min-p_E step={result.best_ef1_step}"
     )
     if result.ef1_curve:
         save_json(out_dir / "ef1_curve.json", result.ef1_curve)
@@ -277,23 +277,9 @@ def maybe_train_and_eval_fft(
             "architecture": "FourierMaskNet_polar",
             "domain": "fft",
             "fft_metric": result.fft_metric,
+            "checkpoint": "min_p_energy",
         },
     )
-    if run_ig:
-        from fft import FourierPolarMasker
-        from fft_ig import save_fourier_ig_run
-
-        fourier = FourierPolarMasker(result.radial_bins, result.angular_bins).to(device)
-        ig_meta = save_fourier_ig_run(
-            out_dir,
-            x,
-            bundle.model,
-            fourier,
-            n_cutoffs=int(getattr(cfg, "ig_n_cutoffs", 8) or 8),
-            ig_steps=int(getattr(cfg, "ig_steps", 32) or 32),
-        )
-        payload["ig"] = ig_meta
-        save_json(metrics_path, payload)
     return payload
 
 
