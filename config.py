@@ -115,7 +115,6 @@ DEFAULT_DWT_BAND_LAMBDAS = {
 DEFAULT_DWT_YAML = PACKAGE_DIR / "configs" / "dwt.yaml"
 DEFAULT_FFT_YAML = PACKAGE_DIR / "configs" / "fft.yaml"
 DEFAULT_DWT_WAVELET = "db1"
-FFT_METRICS = ("energy_conf", "energy_rob")
 
 LOSS_TERMS = ("act", "ce", "kl", "area", "energy", "bin", "tv", "rob")
 
@@ -306,6 +305,12 @@ def add_where_args(p):
         default=None,
         help="Run directory. Default: expcam_runs (local) or /kaggle/working/expcam_runs (kaggle).",
     )
+    p.add_argument(
+        "--eval-set",
+        type=Path,
+        default=None,
+        help="Reuse this eval_set.json (do not rebuild). Use the FFT run's file so image ids match.",
+    )
     p.set_defaults(zip_out=None)
     p.add_argument(
         "--zip-out",
@@ -394,7 +399,7 @@ def parse_dwt_yaml(path=None) -> dict:
 
 
 def parse_fft_yaml(path=None) -> dict:
-    """Load polar-FFT Section 0 weights and bin / metric settings."""
+    """Load polar-FFT Section 0 weights and bin settings from configs/fft.yaml."""
     path = Path(path) if path is not None else DEFAULT_FFT_YAML
     lambdas = dict(DEFAULT_LAMBDAS_FFT)
     radial = 16
@@ -403,7 +408,6 @@ def parse_fft_yaml(path=None) -> dict:
     thresh = 0.5
     noise = 0.1
     n_lpf = 50
-    metric = "energy_conf"
     if path.is_file():
         data = load_yaml_file(path)
         nested = data.get("lambdas") or {}
@@ -421,9 +425,6 @@ def parse_fft_yaml(path=None) -> dict:
         thresh = float(data.get("mask_threshold", thresh))
         noise = float(data.get("noise_scale", noise))
         n_lpf = int(data.get("n_lpf_radii", n_lpf))
-        metric = str(data.get("fft_metric", metric))
-    if metric not in FFT_METRICS:
-        metric = "energy_conf"
     lambdas["area"] = 0.0
     return {
         "lambdas": lambdas,
@@ -433,7 +434,6 @@ def parse_fft_yaml(path=None) -> dict:
         "mask_thresh": thresh,
         "fft_noise_scale": noise,
         "n_lpf_radii": n_lpf,
-        "fft_metric": metric,
         "path": str(path),
     }
 

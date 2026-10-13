@@ -23,6 +23,9 @@ Local (from the folder that contains trainX1_subset/ and expcam/):
   python -m expcam 0 --config expcam/configs/fft.yaml --where local --data-root trainX1_subset --out freq_expcam_fft --backbones resnet18 vit_b_16
   python -m expcam 0 --config expcam/configs/fft.yaml --subset --where local --data-root trainX1_subset --out freq_expcam_fft --backbones resnet18
   python -m expcam 0 --config expcam/configs/fft.yaml --lam-energy 20 --lam-rob 0 --where local --data-root trainX1_subset --out freq_expcam_fft --backbones resnet18
+  python -m expcam sf --subset --spatial-root expcam_spatial --fft-root freq_expcam_fft_energy_lambda_80 \\
+      --data-root trainX1_subset --eval-set freq_expcam_fft_energy_lambda_80/eval_set.json \\
+      --out spatio_freq --backbones resnet18 vit_b_16
   python -m expcam 1 --where local --out expcam_runs_wo_ce --backbones resnet18 vit_b_16
   python -m expcam 2 --from-section0-knapsack --where local --out expcam_runs_wo_ce
   python -m expcam 3 --where local --out expcam_runs_wo_ce --backbones resnet18 vit_b_16
@@ -40,6 +43,8 @@ _SECTION_MODS = {
     "3": "comparisons",
     "4": "robustness",
     "5": "auto_weights",
+    "sf": "spatio_freq",
+    "overlay": "spatio_freq",
 }
 
 

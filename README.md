@@ -21,38 +21,26 @@ python -m expcam eval-set --where local --force --out expcam_runs_wo_ce
 
 WaveX-style **rfft2** polar bins (default 16 radial × 16 angular). A U-Net on RGB maps to one shared sigmoid per bin; `e = IFFT(m ⊙ FFT(x))`.
 
-**Best-mask metrics** (both logged every step; `--fft-metric` picks the checkpoint and the greedy/LPF comparison):
+**Checkpoint:** keep the training step with highest **EF1** = HM(`1 − p_energy`, `conf(e)`), where `p_energy` is the retained FFT energy `||m ⊙ FFT(x)||² / ||FFT(x)||²`.
 
-- `p_energy` = fraction of total FFT energy in the explanation
-- `HM_conf` = HM(`1 − p_energy`, `conf(e)`)
-- `HM_rob` = HM(`1 − p_energy`, `conf_rob`) where dropped frequencies are replaced with white noise before IFFT
-
-**Minimality:** `L_energy` vs `L_area` (polar-bin mean), analogous to pixel EXP-CAM `L_area`. Weights in `expcam/configs/fft.yaml`.
+**Where weights live:** FFT λ and polar bins are `configs/fft.yaml` (CLI overrides: `--lam-energy`, `--lam-rob`, …). If that file is missing, `config.py` `DEFAULT_LAMBDAS_FFT` is used. Paths, steps, and eval-set size also live in `config.py`. There is no separate training-protocol file.
 
 **LPF vs greedy:** for radii `r_i` linearly spaced from 0 to 1 (`n_lpf_radii`, default 50), take the circular low-pass energy `e_i`, then greedily fill polar bins by U-Net score until the same energy. Plot `Δconf = conf(x) − conf(filtered)` for both.
-
-**Attribution-only:** circular low-pass integrated gradients (WaveX Fourier IG).
 
 Eval set: **10 images per class** for every `trainx/` synset with at least 10 files (`n01749939` / green mamba is skipped). Outputs: `section0_fft/`.
 
 ```bash
-# Train + HM curves + step grids + WaveX FFT figures + LPF/greedy + IG
+# Train + EF1 curves + step grids + WaveX FFT figures + LPF/greedy
 python -m expcam 0 --config expcam/configs/fft.yaml \
   --where local --out freq_expcam_fft --backbones resnet18 vit_b_16
 
-# Checkpoint / greedy comparison on robustness confidence
-python -m expcam 0 --fft-metric energy_rob --config expcam/configs/fft.yaml \
-  --where local --out freq_expcam_fft --backbones resnet18
-
-# Area-only vs energy-only (compare to pixel EXP-CAM L_area)
-python -m expcam 0 --lam-energy 0 --lam-area 15 --where local --out freq_expcam_fft_area
-python -m expcam 0 --lam-energy 10 --lam-area 0 --where local --out freq_expcam_fft_energy
+python -m expcam 0 --lam-energy 10 --lam-rob 0 --where local --out freq_expcam_fft_energy
 
 # Figures only
 python -m expcam 0 --figures-only --where local --out freq_expcam_fft --backbones resnet18 vit_b_16
 ```
 
-**Outputs:** `.../section0_fft/{backbone}/ef1_full/{id}/` (`best_ef1/`, `snapshots/`, `attribution_ig/`) and `figures_{backbone}/`.
+**Outputs:** `.../section0_fft/{backbone}/ef1_full/{id}/` (`best_ef1/`, `snapshots/`) and `figures_{backbone}/`.
 
 Sections 1–3 are unchanged pixel EXP-CAM.
 

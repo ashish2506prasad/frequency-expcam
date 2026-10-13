@@ -1,8 +1,8 @@
 """Section 0 — polar FFT EXP-CAM (generative).
 
 Trains FourierMaskNet for SECTION0_STEPS with CE off by default, logs
-HM(1−p_E, conf_e) and HM(1−p_E, conf_rob), checkpoints the step with lowest
-retained p_energy, and writes WaveX-style FFT figures plus LPF vs greedy curves.
+EF1 = HM(1−p_E, conf(e)), checkpoints the step with highest EF1,
+and writes WaveX-style FFT figures plus LPF vs greedy curves.
 """
 
 from __future__ import annotations
@@ -73,7 +73,7 @@ def _curve_rows_from_runs(out_root: Path, section: str, backbone: str, subset) -
                 "wnid": rec["wnid"],
                 "steps": [p["step"] for p in curve],
                 "ef1": [p["ef1"] for p in curve],
-                "ef1_energy": [p["ef1_energy"] for p in curve] if curve and "ef1_energy" in curve[0] else None,
+                "ef1_energy": None,
                 "p_energy": [p["p_energy"] for p in curve] if curve and "p_energy" in curve[0] else None,
                 "p_actual": [p["p_actual"] for p in curve] if curve and "p_actual" in curve[0] else None,
             }
@@ -384,7 +384,7 @@ def run_section0(args) -> None:
     log(
         f"Section 0  device={device}  subset={len(subset)} images "
         f"({args.section0_per_class}/class)  steps={steps}  section={section}  "
-        f"domain={domain}  fft_metric={fft_cfg.get('fft_metric', '—')}  "
+        f"domain={domain}  checkpoint=EF1=HM(1−p_E, conf(e))  "
         f"lambdas={lambdas}  snapshots={snap_steps[0]}…{snap_steps[-1] if snap_steps else '—'}"
     )
 
@@ -413,7 +413,6 @@ def run_section0(args) -> None:
                 fft_angular_bins=int(fft_cfg.get("fft_angular_bins", 16)),
                 fft_mask_temperature=float(fft_cfg.get("fft_mask_temperature", 0.25)),
                 fft_noise_scale=float(fft_cfg.get("fft_noise_scale", 0.1)),
-                fft_metric=str(fft_cfg.get("fft_metric", "energy_conf")),
                 n_lpf_radii=int(fft_cfg.get("n_lpf_radii", 50)),
             )
             extra = {
@@ -448,12 +447,9 @@ def run_section0(args) -> None:
                 row["ef1_final"] = curve[-1]["ef1"]
                 row["ef1_max"] = max(p["ef1"] for p in curve)
                 row["ef1_mean"] = sum(p["ef1"] for p in curve) / len(curve)
-                if "ef1_energy" in curve[0]:
-                    row["ef1_energy_final"] = curve[-1]["ef1_energy"]
-                    row["ef1_energy_max"] = max(p["ef1_energy"] for p in curve)
-                    best_pe = min(curve, key=lambda p: p.get("p_energy", 1.0))
-                    row["p_energy_at_best"] = best_pe.get("p_energy")
-                    row["best_energy_step"] = best_pe.get("step")
+                best_pt = max(curve, key=lambda p: p.get("ef1", 0.0))
+                row["p_energy_at_best"] = best_pt.get("p_energy")
+                row["best_ef1_curve_step"] = best_pt.get("step")
             rows.append(row)
 
         _plot_ef1_for_backbone(out_root, section, backbone, subset, args.ef1_threshold)
@@ -527,12 +523,6 @@ def main(argv=None):
     p = add_common_args(argparse.ArgumentParser(description="Section 0: EF1 diagnostic training"))
     add_loss_lambda_args(p)
     p.set_defaults(steps=SECTION0_STEPS, no_ce=True)
-    p.add_argument(
-        "--fft-metric",
-        choices=["energy_conf", "energy_rob"],
-        default=None,
-        help="Logged HM variant (HM_conf vs HM_rob). Checkpoint is always the step with lowest retained p_E.",
-    )
     p.add_argument(
         "--pixel",
         action="store_true",

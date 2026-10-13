@@ -19,7 +19,6 @@ from data import load_tensor
 from io_utils import load_json, save_json
 from metrics import evaluate_explanation
 from train import TrainConfig, TrainResult, image_seed, log, save_mask_tensors, train_mask
-from train_dwt import DWTTrainResult, save_dwt_mask_tensors, train_mask_dwt
 from train_fft import FFTTrainResult, save_fft_mask_tensors, train_mask_fft
 
 
@@ -130,8 +129,10 @@ def maybe_train_and_eval_dwt(
         return load_json(metrics_path)
 
     log(f"[train] {who}  steps={cfg.steps}")
+    from train_dwt import save_dwt_mask_tensors, train_mask_dwt
+
     x = load_tensor(rec, bundle.preprocess, device, root=eval_root)
-    result: DWTTrainResult = train_mask_dwt(bundle, x, cfg)
+    result = train_mask_dwt(bundle, x, cfg)
     metrics = evaluate_explanation(
         bundle,
         x,
@@ -241,13 +242,10 @@ def maybe_train_and_eval_fft(
         "p_energy_pct": 100.0 * result.p_energy,
         "p_bins": result.p_bins,
         "radial_kept": result.radial_kept,
-        "fft_metric": result.fft_metric,
         "best_ef1": result.best_ef1,
         "best_ef1_conf": result.best_ef1_conf,
-        "best_ef1_rob": result.best_ef1_rob,
         "best_ef1_step": result.best_ef1_step,
         "conf_e": result.conf_e,
-        "conf_rob": result.conf_rob,
         "conf_x": result.conf_x,
         "n_lpf_radii": result.n_lpf_radii,
         "radial_bins": result.radial_bins,
@@ -260,7 +258,7 @@ def maybe_train_and_eval_fft(
         f"[done]  img={rec['id']}  {result.seconds:.1f}s  "
         f"retained p_E={100.0 * result.p_energy:.1f}% of ||FFT(x)||²  "
         f"p_bins={100.0 * result.p_bins:.1f}%  conf(x)={result.conf_x:.3f}  "
-        f"conf(e)={result.conf_e:.3f}  min-p_E step={result.best_ef1_step}"
+        f"conf(e)={result.conf_e:.3f}  EF1={result.best_ef1:.3f} @ step {result.best_ef1_step}"
     )
     if result.ef1_curve:
         save_json(out_dir / "ef1_curve.json", result.ef1_curve)
@@ -276,8 +274,7 @@ def maybe_train_and_eval_fft(
             "per_image": True,
             "architecture": "FourierMaskNet_polar",
             "domain": "fft",
-            "fft_metric": result.fft_metric,
-            "checkpoint": "min_p_energy",
+            "checkpoint": "ef1_hm_conf_energy",
         },
     )
     return payload

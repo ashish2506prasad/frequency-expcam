@@ -3,6 +3,7 @@
 from __future__ import annotations
 
 import argparse
+from pathlib import Path
 
 try:
     from ._path import ensure_pkg_path
@@ -194,7 +195,7 @@ def dwt_settings_from_args(args) -> dict:
 
 
 def fft_settings_from_args(args) -> dict:
-    """YAML defaults, then CLI λ / --fft-metric / bin overrides."""
+    """YAML defaults, then CLI λ / bin overrides."""
     import config as C
 
     yaml_path = getattr(args, "config", None) or C.DEFAULT_FFT_YAML
@@ -203,13 +204,9 @@ def fft_settings_from_args(args) -> dict:
     lambdas["area"] = 0.0
     if getattr(args, "lam_area", None) is not None:
         print("[fft] ignoring --lam-area (area loss is not used in polar FFT)", flush=True)
-    metric = getattr(args, "fft_metric", None) or parsed["fft_metric"]
-    if metric not in C.FFT_METRICS:
-        metric = "energy_conf"
     return {
         **parsed,
         "lambdas": lambdas,
-        "fft_metric": metric,
         "yaml_path": parsed["path"],
     }
 
@@ -240,7 +237,15 @@ def resolve_run(args: argparse.Namespace):
         args.steps = min(args.steps, 40)
         args.backbones = ["resnet18"]
         args.n_images = args.n_images or 7
-    eval_set = load_eval_set()
+    eval_path = getattr(args, "eval_set", None)
+    if eval_path is not None:
+        from io_utils import load_json
+
+        eval_set = load_json(Path(eval_path))
+        eval_set["root"] = str(C.TRAINX_DIR)
+        print(f"Reusing eval set ({len(eval_set.get('images', []))} images) at {eval_path}", flush=True)
+    else:
+        eval_set = load_eval_set()
     images = _stratified_subset(eval_set["images"], args.n_images)
     device = device_from_flag(args.device)
     return eval_set, images, device

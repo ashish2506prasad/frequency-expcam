@@ -78,7 +78,7 @@ class TrainConfig:
     log_every: int = 50  # 0 = silent; notebooks printed every 10 steps
     no_ce: bool = False  # when True, CE loss is omitted from the training objective
     record_ef1: bool = False
-    keep_best_ef1: bool = False  # FFT: keep the step with lowest p_energy; pixel/DWT: highest EF1
+    keep_best_ef1: bool = False  # keep the training step with highest EF1
     ef1_version: str = "legacy"  # "legacy" | "new" (ef1_new_version in metrics.py)
     save_expl_steps: Optional[Sequence[int]] = None
     save_expl_dir: Optional[str] = None
@@ -89,7 +89,6 @@ class TrainConfig:
     fft_angular_bins: int = 16
     fft_mask_temperature: float = 0.25
     fft_noise_scale: float = 0.1
-    fft_metric: str = "energy_conf"
     n_lpf_radii: int = 50
 
 

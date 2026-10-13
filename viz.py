@@ -181,10 +181,10 @@ def plot_ef1_section0_figures(
     curves: Sequence[Dict],
     backbone: str,
     hline: Optional[float] = None,
-    label_a: str = "HM(1−p_E, conf_e)",
-    label_b: str = "HM(1−p_E, conf_rob)",
-    title_a: str = "HM_conf vs steps",
-    title_b: str = "HM_rob vs steps",
+    label_a: str = "EF1 = HM(1−p_E, conf(e))",
+    label_b: str = "",
+    title_a: str = "EF1 vs steps",
+    title_b: str = "",
 ) -> None:
     """Section 0: one EF1-vs-steps plot per image plus one all-classes overlay.
 
@@ -580,8 +580,8 @@ def _ef1_single_step_plot(
     ef1_energy: Optional[Sequence[float]] = None,
     p_energy: Optional[Sequence[float]] = None,
     p_actual: Optional[Sequence[float]] = None,
-    label_a: str = "HM(1−p_E, conf_e)",
-    label_b: str = "HM(1−p_E, conf_rob)",
+    label_a: str = "EF1 = HM(1−p_E, conf(e))",
+    label_b: str = "",
 ) -> None:
     fig, ax = plt.subplots(figsize=(7, 4.4))
     ax.plot(steps, ef1, lw=1.6, color="#4C78A8", label=label_a)

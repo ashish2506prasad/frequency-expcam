@@ -36,14 +36,10 @@ from train import TrainConfig, TrainResult, log, seed_all
 class FFTTrainResult(TrainResult):
     p_energy: float = 0.0
     p_bins: float = 0.0
-    best_metric_name: str = "energy_conf"
     best_ef1_conf: float = 0.0
-    best_ef1_rob: float = 0.0
     conf_e: float = 0.0
-    conf_rob: float = 0.0
     conf_x: float = 0.0
     radial_kept: Dict[str, float] = field(default_factory=dict)
-    fft_metric: str = "energy_conf"
     n_lpf_radii: int = 50
     noise_scale: float = 0.1
     radial_bins: int = 16
@@ -57,7 +53,6 @@ def train_mask_fft(bundle: ClassifierBundle, x: torch.Tensor, cfg: TrainConfig) 
     angular = int(getattr(cfg, "fft_angular_bins", 16) or 16)
     temp = float(getattr(cfg, "fft_mask_temperature", 0.25) or 0.25)
     noise_scale = float(getattr(cfg, "fft_noise_scale", 0.1) or 0.1)
-    metric_name = str(getattr(cfg, "fft_metric", "energy_conf") or "energy_conf")
     n_lpf = int(getattr(cfg, "n_lpf_radii", 50) or 50)
 
     fourier = FourierPolarMasker(radial, angular).to(device)
@@ -75,9 +70,9 @@ def train_mask_fft(bundle: ClassifierBundle, x: torch.Tensor, cfg: TrainConfig) 
     save_expl_set = set(cfg.save_expl_steps or ())
     track = cfg.record_ef1 or cfg.keep_best_ef1
     p_e = 0.0
+    conf_e = 0.0
     ef1_conf = 0.0
-    ef1_rob = 0.0
-    best_score = float("inf")
+    best_score = -1.0
     best_step = 0
     best_soft: Optional[torch.Tensor] = None
     best_hard: Optional[torch.Tensor] = None
@@ -88,7 +83,8 @@ def train_mask_fft(bundle: ClassifierBundle, x: torch.Tensor, cfg: TrainConfig) 
     if cfg.log_every:
         log(
             f"  training FFT polar U-Net  steps={cfg.steps}  bins={radial}x{angular}  "
-            f"T={temp:g}  metric={metric_name}  λ_energy={cfg.lambdas.get('energy', 0):g}  "
+            f"T={temp:g}  checkpoint=EF1=HM(1−p_E, conf(e))  "
+            f"λ_energy={cfg.lambdas.get('energy', 0):g}  "
             f"λ_rob={cfg.lambdas.get('rob', 0):g}  λ_kl={cfg.lambdas.get('kl', 0):g}  "
             f"lr={cfg.lr}  seed={cfg.seed}"
         )
@@ -145,35 +141,26 @@ def train_mask_fft(bundle: ClassifierBundle, x: torch.Tensor, cfg: TrainConfig) 
                 m_hard = (m_soft > cfg.mask_thresh).float()
                 e_hard = fourier.construct_explanation(x, m_hard)
                 logits_eh = bundle.model(e_hard)
-                e_rob = fourier.perturb_explanation(x, m_hard, noise_scale=noise_scale)
-                logits_rob = bundle.model(e_rob)
                 half_h = fourier.expand_polar_mask(m_hard, x.shape[-2], x.shape[-1])
                 p_e = float(fourier.kept_energy_fraction(coeff.detach(), half_h).mean().item())
                 p_bins = float(m_hard.mean().item())
                 conf_e = class_confidence(logits_eh, y)
-                conf_rob = class_confidence(logits_rob, y)
                 ef1_conf = ef1_new_version(conf_e, p_e)
-                ef1_rob = ef1_new_version(conf_rob, p_e)
                 d_conf = confidence_delta(logits_x, logits_eh)
-                score = p_e
                 row = {
                     "step": t,
                     "ef1": ef1_conf,
-                    "ef1_energy": ef1_rob,
                     "ef1_conf": ef1_conf,
-                    "ef1_rob": ef1_rob,
                     "p_energy": p_e,
                     "p_actual": p_bins,
                     "conf_e": conf_e,
-                    "conf_rob": conf_rob,
                     "conf_x": conf_x,
                     "delta_conf": d_conf,
-                    "metric": score,
                 }
                 if track:
                     ef1_curve.append(row)
-                if cfg.keep_best_ef1 and p_e < best_score:
-                    best_score = score
+                if cfg.keep_best_ef1 and ef1_conf >= best_score:
+                    best_score = ef1_conf
                     best_step = t
                     best_soft = m_soft.detach().clone()
                     best_hard = m_hard.detach().clone()
@@ -192,7 +179,7 @@ def train_mask_fft(bundle: ClassifierBundle, x: torch.Tensor, cfg: TrainConfig) 
                 f"act={loss_act.item():.3f}  kl={loss_kl.item():.3f}  "
                 f"energy={loss_energy.item():.3f}  "
                 f"rob={loss_rob.item():.3f}  p_E={100.0 * p_e:.1f}%  "
-                f"HM_conf={ef1_conf:.3f}  HM_rob={ef1_rob:.3f}  top1={'Y' if top1 else 'N'}"
+                f"EF1={ef1_conf:.3f}  conf(e)={conf_e:.3f}  top1={'Y' if top1 else 'N'}"
             )
 
     seconds = time.perf_counter() - t0
@@ -203,12 +190,11 @@ def train_mask_fft(bundle: ClassifierBundle, x: torch.Tensor, cfg: TrainConfig) 
         p_e = float(best_row.get("p_energy", 0.0))
         p_bins = float(best_row.get("p_actual", 0.0))
         conf_e = float(best_row.get("conf_e", 0.0))
-        conf_rob = float(best_row.get("conf_rob", 0.0))
         if cfg.log_every:
             log(
-                f"  best (min retained p_E)={best_score:.4f} at step {best_step}  "
+                f"  best EF1={best_score:.4f} at step {best_step}  "
                 f"p_E={100.0 * p_e:.1f}% of ||FFT(x)||²  conf(x)={conf_x:.3f}  "
-                f"conf(e)={best_row.get('conf_e', 0):.3f}"
+                f"conf(e)={conf_e:.3f}"
             )
     else:
         mask_net.eval()
@@ -221,14 +207,12 @@ def train_mask_fft(bundle: ClassifierBundle, x: torch.Tensor, cfg: TrainConfig) 
             p_e = float(fourier.kept_energy_fraction(coeff, half_h).mean().item())
             p_bins = float(m_hard.mean().item())
             logits_eh = bundle.model(e)
-            e_rob = fourier.perturb_explanation(x, m_hard, noise_scale=noise_scale)
             conf_e = class_confidence(logits_eh, y)
-            conf_rob = class_confidence(bundle.model(e_rob), y)
-            best_score = p_e
+            best_score = ef1_new_version(conf_e, p_e)
             best_step = cfg.steps
             best_row = {
-                "ef1_conf": ef1_new_version(conf_e, p_e),
-                "ef1_rob": ef1_new_version(conf_rob, p_e),
+                "ef1": best_score,
+                "ef1_conf": best_score,
                 "p_energy": p_e,
                 "conf_e": conf_e,
                 "conf_x": conf_x,
@@ -253,7 +237,6 @@ def train_mask_fft(bundle: ClassifierBundle, x: torch.Tensor, cfg: TrainConfig) 
             fourier,
             best_row,
             best_step,
-            metric_name,
             radial_kept,
         )
         lpf_vs_greedy_comparison(
@@ -283,14 +266,10 @@ def train_mask_fft(bundle: ClassifierBundle, x: torch.Tensor, cfg: TrainConfig) 
         best_ef1_step=int(best_step),
         p_energy=float(p_e),
         p_bins=float(p_bins),
-        best_metric_name=metric_name,
         best_ef1_conf=float(best_row.get("ef1_conf", 0.0)),
-        best_ef1_rob=float(best_row.get("ef1_rob", 0.0)),
         conf_e=float(conf_e),
-        conf_rob=float(conf_rob),
         conf_x=float(conf_x),
         radial_kept=radial_kept,
-        fft_metric=metric_name,
         n_lpf_radii=n_lpf,
         noise_scale=noise_scale,
         radial_bins=radial,
@@ -333,7 +312,6 @@ def save_fft_best_expl(
     fourier: FourierPolarMasker,
     best_row: dict,
     best_step: int,
-    metric_name: str,
     radial_kept: dict,
 ) -> None:
     from pathlib import Path
@@ -374,7 +352,7 @@ def save_fft_best_expl(
         full_s[0, 0].detach().cpu().numpy(),
         full_h[0, 0].detach().cpu().numpy(),
         title=(
-            f"Lowest retained energy @ step {best_step}  "
+            f"Best EF1=HM(1−p_E, conf(e)) @ step {best_step}  "
             f"conf(x)={conf_x:.3f}  conf(e)={conf_e:.3f}  "
             f"retained p_E={100.0 * p_e:.1f}% of ||FFT(x)||²"
         ),
@@ -386,7 +364,7 @@ def save_fft_best_expl(
     save_json(
         dest / "best_ef1_meta.json",
         {
-            "best_metric": metric_name,
+            "checkpoint": "ef1_hm_conf_energy",
             "best_ef1_step": best_step,
             **{k: (float(v) if isinstance(v, (int, float, np.floating)) else v) for k, v in best_row.items()},
             "radial_kept": radial_kept,
@@ -464,7 +442,6 @@ def save_fft_mask_tensors(out_dir, result: FFTTrainResult) -> None:
             "p_bins": result.p_bins,
             "radial_kept": result.radial_kept,
             "domain": "fft",
-            "fft_metric": result.fft_metric,
             "radial_bins": result.radial_bins,
             "angular_bins": result.angular_bins,
         },
