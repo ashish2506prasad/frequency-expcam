@@ -39,6 +39,7 @@ from runner import maybe_train_and_eval, maybe_train_and_eval_dwt, maybe_train_a
 from train import TrainConfig, image_seed, log
 from train_dwt import save_dwt_best_band_expl_from_run
 from viz import (
+    plot_delta_conf_histograms,
     plot_dwt_freq_bias_bars,
     plot_ef1_section0_figures,
     plot_lpf_vs_greedy,
@@ -213,57 +214,123 @@ def _plot_fft_grids_for_backbone(out_root, section, backbone, subset) -> None:
         log(f"[figures] {backbone}: FFT WaveX grids + LPF -> {fig_dir}")
 
 
-def _plot_fft_freq_bias(out_root, section, backbones, subset) -> None:
-    """Mean retained energy per radial third, averaged over images (not one plot per image).
+def _is_top1(met: dict) -> bool:
+    if met.get("top1_agreement") is not None:
+        return float(met["top1_agreement"]) >= 0.5
+    if "pred_x" in met and "pred_e" in met:
+        return int(met["pred_x"]) == int(met["pred_e"])
+    return False
 
-    Bands use Nyquist-normalized radius r ∈ [0, 1]:
-      low [0, 1/3), mid [1/3, 2/3), high [2/3, 1].
-    Each value is ||m ⊙ 1_band ⊙ FFT(x)||² / ||1_band ⊙ FFT(x)||².
+
+def _delta_conf_drop(met: dict) -> float:
+    """conf(x) − conf(e); how much original-class confidence the explanation loses."""
+    if met.get("conf_x") is not None and met.get("conf_e") is not None:
+        return float(met["conf_x"]) - float(met["conf_e"])
+    return -float(met.get("confidence_delta", 0.0) or 0.0)
+
+
+def _plot_fft_freq_bias(out_root, section, backbones, subset) -> None:
+    """Radial-band energy bias on top-1 survivors + Δconf histograms per backbone.
+
+    Frequency-bias bars use only images where argmax f(e) = argmax f(x).
+    Histograms show Δconf = conf(x) − conf(e) for survivors vs failures.
+    Bands: Nyquist-normalized r; kept = ||m ⊙ 1_band ⊙ FFT(x)||² / ||1_band ⊙ FFT(x)||².
     """
     pair = [b for b in ("resnet18", "vit_b_16") if b in backbones] or list(backbones)
     dest = Path(out_root) / section / "figures_freq_bias"
     bands = ("low", "mid", "high")
     per_bb = {bb: {b: [] for b in bands} for bb in pair}
-    n_img = {bb: 0 for bb in pair}
+    hist = {bb: {"top1": [], "fail": []} for bb in pair}
+    n_total = {bb: 0 for bb in pair}
+    n_top1 = {bb: 0 for bb in pair}
+    rows = []
     for rec in subset:
         for bb in pair:
-            met = run_dir(out_root, section, bb, "ef1_full", rec["id"]) / "metrics.json"
-            if not met.exists():
+            met_path = run_dir(out_root, section, bb, "ef1_full", rec["id"]) / "metrics.json"
+            if not met_path.exists():
                 continue
-            radial = load_json(met).get("radial_kept") or {}
-            if not radial:
-                continue
-            n_img[bb] += 1
-            for b in bands:
-                per_bb[bb][b].append(float(radial.get(b, 0.0)))
+            met = load_json(met_path)
+            n_total[bb] += 1
+            dconf = _delta_conf_drop(met)
+            top1 = _is_top1(met)
+            if top1:
+                n_top1[bb] += 1
+                hist[bb]["top1"].append(dconf)
+                radial = met.get("radial_kept") or {}
+                if radial:
+                    for b in bands:
+                        per_bb[bb][b].append(float(radial.get(b, 0.0)))
+            else:
+                hist[bb]["fail"].append(dconf)
+            rows.append(
+                {
+                    "image_id": rec["id"],
+                    "class_name": rec["class_name"],
+                    "backbone": bb,
+                    "top1": top1,
+                    "delta_conf": dconf,
+                    "conf_x": met.get("conf_x"),
+                    "conf_e": met.get("conf_e"),
+                    "radial_kept": met.get("radial_kept") or {},
+                }
+            )
+
     mean_kept, std_kept = {}, {}
     for bb in pair:
-        if n_img[bb] == 0:
+        if n_top1[bb] == 0 or not any(per_bb[bb][b] for b in bands):
             continue
-        mean_kept[bb] = {b: float(sum(per_bb[bb][b]) / len(per_bb[bb][b])) for b in bands}
+        mean_kept[bb] = {}
         std_kept[bb] = {}
         for b in bands:
             vals = per_bb[bb][b]
+            if not vals:
+                mean_kept[bb][b] = 0.0
+                std_kept[bb][b] = 0.0
+                continue
+            mu = float(sum(vals) / len(vals))
+            mean_kept[bb][b] = mu
             if len(vals) < 2:
                 std_kept[bb][b] = 0.0
             else:
-                mu = mean_kept[bb][b]
                 std_kept[bb][b] = float((sum((v - mu) ** 2 for v in vals) / (len(vals) - 1)) ** 0.5)
-    if not mean_kept:
-        return
-    plot_dwt_freq_bias_bars(
-        dest / "Fig0_freq_bias_mean.png",
-        mean_kept,
-        title="Mean retained energy per radial band (error bars = std over images)",
-        bands=bands,
-        std_by_backbone=std_kept,
-        xlabel="radial band  (low r<1/3, mid 1/3–2/3, high r>2/3)",
-        ylabel="retained energy / band energy (%)",
-    )
+
+    n_note = ", ".join(f"{bb} {n_top1[bb]}/{n_total[bb]}" for bb in pair)
+    if mean_kept:
+        plot_dwt_freq_bias_bars(
+            dest / "Fig0_freq_bias_mean.png",
+            mean_kept,
+            title=f"Mean retained energy (top-1 preserved)  n={n_note}",
+            bands=bands,
+            std_by_backbone=std_kept,
+            xlabel="radial band  (low r<1/3, mid 1/3–2/3, high r>2/3)",
+            ylabel="retained energy / band energy (%)",
+        )
+    if any(hist[bb]["top1"] or hist[bb]["fail"] for bb in pair):
+        plot_delta_conf_histograms(
+            dest / "Fig0_delta_conf_hist.png",
+            hist,
+            title=r"$\Delta$conf = conf(x) − conf(e)  (top-1 kept vs lost)",
+        )
+
+    def _ms(vals):
+        vals = [float(v) for v in vals]
+        if not vals:
+            return {"mean": None, "std": None, "n": 0}
+        mu = float(sum(vals) / len(vals))
+        std = float((sum((v - mu) ** 2 for v in vals) / (len(vals) - 1)) ** 0.5) if len(vals) > 1 else 0.0
+        return {"mean": mu, "std": std, "n": len(vals)}
+
     save_json(
         dest / "Fig0_freq_bias_mean.json",
         {
-            "n_images": n_img,
+            "filter": "freq-bias bars: top-1 agreement only (argmax f(e) = argmax f(x))",
+            "n_total": n_total,
+            "n_top1": n_top1,
+            "survival_rate": {
+                bb: (float(n_top1[bb] / n_total[bb]) if n_total[bb] else 0.0) for bb in pair
+            },
+            "delta_conf_top1": {bb: _ms(hist[bb]["top1"]) for bb in pair},
+            "delta_conf_fail": {bb: _ms(hist[bb]["fail"]) for bb in pair},
             "bands": {
                 "low": "[0, 1/3)",
                 "mid": "[1/3, 2/3)",
@@ -272,9 +339,13 @@ def _plot_fft_freq_bias(out_root, section, backbones, subset) -> None:
             },
             "mean_kept_frac": mean_kept,
             "std_kept_frac": std_kept,
+            "rows": rows,
         },
     )
-    log(f"[figures] FFT mean freq-bias -> {dest / 'Fig0_freq_bias_mean.png'}  n={n_img}")
+    log(
+        f"[figures] FFT freq-bias (top-1 only) + Δconf hist -> {dest}  "
+        f"survive={n_note}"
+    )
 
 
 def _plot_fft_lpf_mean(out_root, section, backbone, subset) -> None:

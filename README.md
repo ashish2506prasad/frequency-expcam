@@ -25,6 +25,8 @@ WaveX-style **rfft2** polar bins (default 16 radial × 16 angular). A U-Net on R
 
 **Where weights live:** FFT λ and polar bins are `configs/fft.yaml` (CLI overrides: `--lam-energy`, `--lam-rob`, …). If that file is missing, `config.py` `DEFAULT_LAMBDAS_FFT` is used. Paths, steps, and eval-set size also live in `config.py`. There is no separate training-protocol file.
 
+**Frequency bias:** radial-band energy is averaged only over images where the explanation keeps the original top-1 class. A separate histogram (ResNet vs ViT) shows `Δconf = conf(x) − conf(e)` for top-1 kept vs lost.
+
 **LPF vs greedy:** for radii `r_i` linearly spaced from 0 to 1 (`n_lpf_radii`, default 50), take the circular low-pass energy `e_i`, then greedily fill polar bins by U-Net score until the same energy. Plot `Δconf = conf(x) − conf(filtered)` for both.
 
 Eval set: **10 images per class** for every `trainx/` synset with at least 10 files (`n01749939` / green mamba is skipped). Outputs: `section0_fft/`.

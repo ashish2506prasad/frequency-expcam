@@ -470,6 +470,68 @@ def plot_dwt_freq_bias_bars(
     _save(fig, path)
 
 
+def plot_delta_conf_histograms(
+    path: Path,
+    by_backbone: Dict[str, Dict[str, Sequence[float]]],
+    title: str = "",
+    xlabel: str = r"$\Delta$conf  (conf(x) − conf(e))",
+) -> None:
+    """One panel per backbone: Δconf of top-1 survivors vs failures."""
+    names = list(by_backbone.keys())
+    if not names:
+        return
+    n = len(names)
+    fig, axes = plt.subplots(1, n, figsize=(4.6 * n, 3.8), sharex=True, sharey=True)
+    if n == 1:
+        axes = [axes]
+    all_vals = []
+    for name in names:
+        pack = by_backbone[name]
+        all_vals.extend(float(v) for v in pack.get("top1", []) or [])
+        all_vals.extend(float(v) for v in pack.get("fail", []) or [])
+    if all_vals:
+        lo, hi = float(min(all_vals)), float(max(all_vals))
+        if lo == hi:
+            lo, hi = lo - 0.05, hi + 0.05
+        pad = 0.05 * (hi - lo)
+        bins = np.linspace(lo - pad, hi + pad, 16)
+    else:
+        bins = np.linspace(-0.05, 1.05, 16)
+    for ax, name in zip(axes, names):
+        pack = by_backbone[name]
+        top1 = np.asarray(pack.get("top1") or [], dtype=float)
+        fail = np.asarray(pack.get("fail") or [], dtype=float)
+        if top1.size:
+            ax.hist(
+                top1,
+                bins=bins,
+                color="#4C78A8",
+                alpha=0.75,
+                edgecolor="white",
+                label=f"top-1 kept  n={len(top1)}",
+            )
+        if fail.size:
+            ax.hist(
+                fail,
+                bins=bins,
+                color="#E45756",
+                alpha=0.55,
+                edgecolor="white",
+                label=f"top-1 lost  n={len(fail)}",
+            )
+        n_all = len(top1) + len(fail)
+        rate = (100.0 * len(top1) / n_all) if n_all else 0.0
+        ax.set_title(f"{BACKBONE_BAR_LABELS.get(name, name)}\n{len(top1)}/{n_all} top-1 ({rate:.0f}%)")
+        ax.set_xlabel(xlabel)
+        ax.legend(fontsize=8, loc="best")
+        _style_axis(ax)
+    axes[0].set_ylabel("count")
+    if title:
+        fig.suptitle(title, fontsize=11)
+    fig.tight_layout()
+    _save(fig, path)
+
+
 def plot_fft_wavex_grid(
     path: Path,
     x_img: np.ndarray,

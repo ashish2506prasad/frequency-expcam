@@ -6,12 +6,12 @@
 # Checkpoint: highest EF1 = HM(1 − p_energy, conf(e))
 #   p_energy = ||m ⊙ FFT(x)||² / ||FFT(x)||²
 
-fft_radial_bins: 16
-fft_angular_bins: 16
+fft_radial_bins: 32
+fft_angular_bins: 24
 mask_temperature: 0.25
 mask_threshold: 0.5
 noise_scale: 0.1
-n_lpf_radii: 50          # linear r=0…1 samples for LPF vs greedy Δconf plot
+n_lpf_radii: 32          # linear r=0…1 samples for LPF vs greedy Δconf plot
 
 lambdas:
   act: 10.0
