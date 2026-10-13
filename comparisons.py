@@ -23,7 +23,7 @@ ensure_pkg_path()
 from baselines import BASELINE_NAMES, compute_heatmap, otsu_binarize, topk_binarize
 from cli import add_common_args, resolve_run
 from classifiers import load_classifier
-from config import DEFAULT_LAMBDAS, N_RISE_MASKS, SECTION3_EXP_STEPS, figure_dir
+from config import DEFAULT_LAMBDAS, N_RISE_MASKS, STEPS, figure_dir
 from data import load_tensor
 from io_utils import ensure_dir, load_json, mean_std, rows_to_excel, save_json
 from metrics import evaluate_explanation, insertion_curve
@@ -497,7 +497,7 @@ def main(argv=None):
     p.add_argument(
         "--exp-steps",
         type=int,
-        default=SECTION3_EXP_STEPS,
+        default=STEPS,
         help="EXP-CAM U-Net steps; best EF1 checkpoint is saved (default: 800).",
     )
     p.add_argument(

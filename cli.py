@@ -103,9 +103,6 @@ def add_common_args(p: argparse.ArgumentParser) -> argparse.ArgumentParser:
 
 def add_loss_lambda_args(p: argparse.ArgumentParser) -> argparse.ArgumentParser:
     """CLI overrides for each loss term (λ_act, λ_ce, …)."""
-    import config as C
-
-    defaults = C.DEFAULT_LAMBDAS
     p.add_argument("--lam-act", type=float, default=None, help="Override YAML λ_act.")
     p.add_argument("--lam-ce", type=float, default=None, help="Override YAML λ_ce.")
     p.add_argument("--lam-kl", type=float, default=None, help="Override YAML λ_kl.")
@@ -113,85 +110,19 @@ def add_loss_lambda_args(p: argparse.ArgumentParser) -> argparse.ArgumentParser:
         "--lam-area",
         type=float,
         default=None,
-        help="Override YAML λ_area (pixel/DWT only; ignored for FFT Section 0).",
+        help="Override YAML λ_area (pixel only; ignored for FFT Section 0).",
     )
     p.add_argument("--lam-energy", type=float, default=None, help="Override YAML λ_energy (FFT p_energy).")
     p.add_argument("--lam-bin", type=float, default=None, help="Override YAML λ_bin.")
     p.add_argument("--lam-tv", type=float, default=None, help="Override YAML λ_tv.")
     p.add_argument("--lam-rob", type=float, default=None, help="Override YAML λ_rob.")
-    for suffix in ("ll", "lh", "hl", "hh"):
-        p.add_argument(f"--lam-{suffix}-area", type=float, default=None, help=f"DWT: L_area on {suffix.upper()} subband mask.")
-        p.add_argument(f"--lam-{suffix}-tv", type=float, default=None, help=f"DWT: L_tv on {suffix.upper()} subband mask.")
-        p.add_argument(f"--lam-{suffix}-rob", type=float, default=None, help=f"DWT: L_rob on {suffix.upper()} subband (coeff-domain mix).")
     p.add_argument(
         "--config",
         type=str,
         default=None,
-        help="YAML with Section 0 loss weights (FFT: expcam/configs/fft.yaml; DWT: dwt.yaml when --dwt).",
+        help="YAML with Section 0 loss weights (default: configs/fft.yaml).",
     )
-    for suffix in ("ll", "lh", "hl", "hh"):
-        p.add_argument(
-            f"--no-{suffix}",
-            f"--no_{suffix}",
-            action="store_true",
-            dest=f"no_{suffix}",
-            help=f"DWT: force {suffix.upper()} mask to 0 (drop that subband; do not train it).",
-        )
     return p
-
-
-def band_lambdas_from_args(args, base: dict | None = None) -> dict:
-    import config as C
-
-    out = dict(base if base is not None else C.DEFAULT_DWT_BAND_LAMBDAS)
-    for suffix, band in zip(C.DWT_SUBBAND_CLI, C.DWT_SUBBANDS):
-        a = getattr(args, f"lam_{suffix}_area", None)
-        if a is not None:
-            out[f"area_{band}"] = float(a)
-        t = getattr(args, f"lam_{suffix}_tv", None)
-        if t is not None:
-            out[f"tv_{band}"] = float(t)
-        r = getattr(args, f"lam_{suffix}_rob", None)
-        if r is not None:
-            out[f"rob_{band}"] = float(r)
-    return out
-
-
-def disabled_subbands_from_args(args, extra=None) -> tuple:
-    """CLI --no-ll / --no-lh / … plus YAML ``disabled_subbands``."""
-    import config as C
-
-    out = []
-    seen = set()
-    for src in (extra or [],):
-        for s in src:
-            b = str(s).upper()
-            if b in C.DWT_SUBBANDS and b not in seen:
-                seen.add(b)
-                out.append(b)
-    for suffix, band in zip(C.DWT_SUBBAND_CLI, C.DWT_SUBBANDS):
-        if getattr(args, f"no_{suffix}", False) and band not in seen:
-            seen.add(band)
-            out.append(band)
-    return tuple(out)
-
-
-def dwt_settings_from_args(args) -> dict:
-    """YAML defaults, then CLI λ / --no-* overrides."""
-    import config as C
-
-    yaml_path = getattr(args, "config", None) or C.DEFAULT_DWT_YAML
-    parsed = C.parse_dwt_yaml(yaml_path)
-    lambdas = lambdas_from_args(args, base=parsed["lambdas"])
-    band_lambdas = band_lambdas_from_args(args, base=parsed["band_lambdas"])
-    disabled = disabled_subbands_from_args(args, extra=parsed["disabled_subbands"])
-    return {
-        "lambdas": lambdas,
-        "band_lambdas": band_lambdas,
-        "disabled_subbands": disabled,
-        "wavelet": parsed["wavelet"],
-        "yaml_path": parsed["path"],
-    }
 
 
 def fft_settings_from_args(args) -> dict:

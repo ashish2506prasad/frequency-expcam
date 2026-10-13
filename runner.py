@@ -70,9 +70,6 @@ def maybe_train_and_eval(
         "optimizer": "Adam",
         "seconds": result.seconds,
         "lambdas": result.lambdas,
-        "band_lambdas": cfg.band_lambdas,
-        "disabled_subbands": list(cfg.disabled_subbands or ()),
-        "wavelet": cfg.wavelet,
         "constraint": cfg.constraint,
         "p_target": cfg.p_target,
         "mu_final": result.mu_final,
@@ -106,92 +103,6 @@ def maybe_train_and_eval(
             "lr": cfg.lr,
             "per_image": True,
             "architecture": "UNetCSAE",
-        },
-    )
-    return payload
-
-
-def maybe_train_and_eval_dwt(
-    bundle: ClassifierBundle,
-    rec: dict,
-    eval_root: Path,
-    out_dir: Path,
-    cfg: TrainConfig,
-    skip_existing: bool,
-    device: torch.device,
-    extra_metrics: Optional[Dict] = None,
-) -> Dict:
-    metrics_path = out_dir / "metrics.json"
-    tag = (extra_metrics or {}).get("config") or (extra_metrics or {}).get("protocol") or ""
-    who = f"{bundle.name}  img={rec['id']} {rec['class_name']}  DWT  {tag}".strip()
-    if skip_existing and metrics_path.exists():
-        log(f"[skip] {who}")
-        return load_json(metrics_path)
-
-    log(f"[train] {who}  steps={cfg.steps}")
-    from train_dwt import save_dwt_mask_tensors, train_mask_dwt
-
-    x = load_tensor(rec, bundle.preprocess, device, root=eval_root)
-    result = train_mask_dwt(bundle, x, cfg)
-    metrics = evaluate_explanation(
-        bundle,
-        x,
-        result.mask_hard,
-        mask_prob=result.mask_prob,
-        e=result.e,
-        p_subbands=result.p_subbands,
-        p_energy=result.p_energy,
-    )
-    payload = {
-        "image_id": rec["id"],
-        "relpath": rec["relpath"],
-        "wnid": rec["wnid"],
-        "class_name": rec["class_name"],
-        "backbone": bundle.name,
-        "domain": "dwt",
-        "seed": result.seed,
-        "steps": result.steps,
-        "lr": cfg.lr,
-        "optimizer": "Adam",
-        "seconds": result.seconds,
-        "lambdas": result.lambdas,
-        "p_subbands": result.p_subbands,
-        "p_energy": result.p_energy,
-        "p_energy_pct": 100.0 * result.p_energy,
-        "p_energy_bands": result.p_energy_bands,
-        "ef1_energy": result.best_ef1,
-        "best_ef1_area": result.best_ef1_area,
-        "band_lambdas": cfg.band_lambdas,
-        "disabled_subbands": list(getattr(result, "disabled_subbands", ()) or cfg.disabled_subbands or ()),
-        "wavelet": cfg.wavelet,
-        "best_ef1": result.best_ef1,
-        "best_ef1_step": result.best_ef1_step,
-        **metrics,
-        **(extra_metrics or {}),
-    }
-    save_json(metrics_path, payload)
-    log(
-        f"[done]  img={rec['id']}  {result.seconds:.1f}s  "
-        f"p_ll={metrics.get('p_ll_pct', 0):.1f}%  p_mean={metrics['p_actual_pct']:.1f}%  "
-        f"p_E={100.0 * result.p_energy:.1f}%  "
-        f"top1={int(metrics['top1_agreement'])}  EF1_E={result.best_ef1:.3f}"
-    )
-    if result.ef1_curve:
-        save_json(out_dir / "ef1_curve.json", result.ef1_curve)
-    save_dwt_mask_tensors(out_dir, result)
-    save_json(
-        out_dir / "train_meta.json",
-        {
-            "seconds": result.seconds,
-            "steps": result.steps,
-            "seed": result.seed,
-            "optimizer": "Adam",
-            "lr": cfg.lr,
-            "per_image": True,
-            "architecture": "UNetCSAE_image_to_dwt_masks",
-            "domain": "dwt",
-            "wavelet": cfg.wavelet,
-            "disabled_subbands": list(cfg.disabled_subbands or ()),
         },
     )
     return payload

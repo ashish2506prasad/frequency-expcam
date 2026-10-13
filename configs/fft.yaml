@@ -1,7 +1,6 @@
-# Polar FFT (Section 0) — WaveX generative explainer.
-# Live FFT λ / bins live HERE (then CLI: --lam-act --lam-ce --lam-kl --lam-energy --lam-bin --lam-tv --lam-rob).
-# Defaults if this file is missing: config.py DEFAULT_LAMBDAS_FFT.
-# Area loss is not used in FFT (polar-bin mean is not spectral energy).
+# Polar FFT (Section 0) — only source of FFT λ and polar-bin settings.
+# CLI overrides: --lam-act --lam-ce --lam-kl --lam-energy --lam-bin --lam-tv --lam-rob
+# Area loss is not used (polar-bin mean is not spectral energy).
 #
 # Checkpoint: highest EF1 = HM(1 − p_energy, conf(e))
 #   p_energy = ||m ⊙ FFT(x)||² / ||FFT(x)||²

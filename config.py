@@ -1,7 +1,6 @@
-"""Canonical hyperparameters, paths, and experiment constants.
+"""Paths, eval-set size, pixel-section λ, and helpers.
 
-Values below are the paper's later full-model defaults, taken from the
-AM4/AM5/AM6 training cells (not the earlier AM1/AM2 hand-tuning grid).
+FFT λ and polar bins: configs/fft.yaml only (CLI --lam-* overrides).
 """
 
 from __future__ import annotations
@@ -27,15 +26,11 @@ SEED = 0
 # None = every TRAINX_CLASSES folder with at least N_PER_CLASS images (skips e.g. n01749939=7).
 N_CLASSES = None
 N_PER_CLASS = 10
-N_IMAGES = None  # filled when the eval set is built
-QUALITATIVE_PER_CLASS = 2  # images per class in Fig A11, B5, C4, E4, etc.
-SECTION0_PER_CLASS = 10  # Section 0 trains 10 images per class
+QUALITATIVE_PER_CLASS = 2
+SECTION0_PER_CLASS = 10
 SECTION0_IMAGE_SLOTS = tuple(range(10))
-SECTION0_STEPS = 800
-SECTION0_EF1_SNAPSHOT_START = 0
-SECTION0_EF1_SNAPSHOT_EVERY = 40
-SECTION3_EXP_STEPS = 800  # EXP-CAM training in Section 3; best-EF1 checkpoint saved
-IMAGE_SIZE = 224
+STEPS = 400
+SNAPSHOT_EVERY = 20
 
 DEFAULT_BACKBONES = ("resnet18", "efficientnet_b0", "vit_b_16")
 
@@ -52,11 +47,8 @@ def figure_dir(out_root: Path, section: str, backbone: str) -> Path:
     sub = FIGURE_DIRS.get(backbone, f"figures_{backbone}")
     return Path(out_root) / section / sub
 
-# Per-image U-Net training (AM6 cell 15 / AM4–AM5 full-model cells)
-STEPS = 700
-SECTION1_STEPS = 300
+# Pixel-section U-Net (Sections 1–5). FFT λ / bins live only in configs/fft.yaml.
 LR = 5e-5
-OPTIMIZER_NAME = "adam"
 TEMPERATURE = 2.0
 MASK_THRESH = 0.5
 ROB_K_BACKGROUNDS = 3
@@ -66,56 +58,13 @@ DEFAULT_LAMBDAS = {
     "ce": 15.0,
     "kl": 5.0,
     "area": 100.0,
-    "energy": 0.0,  # FFT Section 0; unused in pixel EXP-CAM
-    "bin": 1.0,
-    "tv": 500.0,
-    "rob": 100.0,  # abductive / L_rob in the notebooks (lam_abd)
-}
-
-DEFAULT_LAMBDAS_DWT = {
-    "act": 10.0,
-    "ce": 0.0,
-    "kl": 5.0,
-    "area": 0.0,  # uniform extra; WaveX per-band area lives in DEFAULT_DWT_BAND_LAMBDAS
     "energy": 0.0,
     "bin": 1.0,
-    "tv": 0.0,
-    "rob": 0.0,
+    "tv": 500.0,
+    "rob": 100.0,
 }
 
-DEFAULT_LAMBDAS_FFT = {
-    "act": 10.0,
-    "ce": 0.0,
-    "kl": 5.0,
-    "area": 0.0,  # unused in polar FFT (kept so the lambda dict is complete)
-    "energy": 10.0,
-    "bin": 1.0,
-    "tv": 0.0,
-    "rob": 6.0,
-}
-
-# Per Haar subband area / TV weights (keys area_LL, tv_LH, …). CLI: --lam-ll-area, etc.
-# WaveX adds Σ w_b * mean(m_b) directly (not multiplied by λ_area). HH > LH=HL > LL.
-DWT_SUBBANDS = ("LL", "LH", "HL", "HH")
-DWT_SUBBAND_CLI = ("ll", "lh", "hl", "hh")
-DEFAULT_DWT_BAND_LAMBDAS = {
-    "area_LL": 5.0,
-    "area_LH": 10.0,
-    "area_HL": 10.0,
-    "area_HH": 20.0,
-    "tv_LL": 0.0,
-    "tv_LH": 0.0,
-    "tv_HL": 0.0,
-    "tv_HH": 0.0,
-    "rob_LL": 0.0,
-    "rob_LH": 0.0,
-    "rob_HL": 0.0,
-    "rob_HH": 0.0,
-}
-DEFAULT_DWT_YAML = PACKAGE_DIR / "configs" / "dwt.yaml"
 DEFAULT_FFT_YAML = PACKAGE_DIR / "configs" / "fft.yaml"
-DEFAULT_DWT_WAVELET = "db1"
-
 LOSS_TERMS = ("act", "ce", "kl", "area", "energy", "bin", "tv", "rob")
 
 BUDGETS = (0.50, 0.30, 0.20, 0.10, 0.05, 0.02, 0.01, 0.005)
@@ -161,20 +110,18 @@ TRAINX_CLASSES = {
 
 
 def ef1_snapshot_steps(
-    start: int = SECTION0_EF1_SNAPSHOT_START,
-    every: int = SECTION0_EF1_SNAPSHOT_EVERY,
-    max_step: int = SECTION0_STEPS,
+    every: int = SNAPSHOT_EVERY,
+    max_step: int = STEPS,
 ) -> tuple[int, ...]:
-    """Steps at which to save explanation snapshots (40, 80, …, max_step)."""
-    return tuple(range(start + every, max_step + 1, every))
+    """Snapshot steps: every, 2*every, …, max_step."""
+    return tuple(range(every, max_step + 1, every))
 
 
 def ef1_grid_steps(
     every: int,
-    max_step: int = SECTION0_STEPS,
+    max_step: int = STEPS,
     first: int | None = None,
 ) -> tuple[int, ...]:
-    """Steps for Section 0 progression grids (40, 80, …, max_step)."""
     if first is None:
         first = every
     return tuple(range(first, max_step + 1, every))
@@ -182,16 +129,10 @@ def ef1_grid_steps(
 N_BG_DRAWS = 5
 N_INSERT_STEPS = 50
 N_RISE_MASKS = 800
-N_INSERT_SEEDS = 5
 AUG_ROT_DEG = 5.0
 AUG_TRANSLATE_FRAC = 0.05
 AUG_BRIGHTNESS = 0.10
-
-# Retrospective count of distinct λ tuples in AM0–AM6 (Section 5 "tuning cost")
 MANUAL_TRIAL_CONFIGS = 18
-
-# Section 6 — local causal LM (no Hugging Face hub on air-gapped clusters)
-DISTILGPT2_LOCAL = PROJECT_ROOT / "distilgpt2-local"
 
 
 def detect_where() -> str:
@@ -327,21 +268,6 @@ def add_where_args(p):
     return p
 
 
-_YAML_LAMBDA_KEYS = {
-    "lambda_act": "act",
-    "lambda_CE": "ce",
-    "lambda_ce": "ce",
-    "lambda_KL": "kl",
-    "lambda_kl": "kl",
-    "lambda_area": "area",
-    "lambda_energy": "energy",
-    "lambda_bins": "area",
-    "lambda_bin": "bin",
-    "lambda_tv": "tv",
-    "lambda_rob": "rob",
-}
-
-
 def load_yaml_file(path) -> dict:
     import yaml
 
@@ -355,93 +281,26 @@ def load_yaml_file(path) -> dict:
     return data
 
 
-def parse_dwt_yaml(path=None) -> dict:
-    """Load DWT training weights. Missing file → package defaults.
-
-    Accepts nested ``lambdas`` / ``band_lambdas`` or WaveX-style ``lambda_act``,
-    ``lambda_area_LL``, ``disabled_subbands``, ``wavelet``.
-    """
-    path = Path(path) if path is not None else DEFAULT_DWT_YAML
-    lambdas = dict(DEFAULT_LAMBDAS_DWT)
-    band = dict(DEFAULT_DWT_BAND_LAMBDAS)
-    disabled: list[str] = []
-    wavelet = DEFAULT_DWT_WAVELET
-    if path.is_file():
-        data = load_yaml_file(path)
-        nested = data.get("lambdas") or {}
-        for k, v in nested.items():
-            if k in lambdas and v is not None:
-                lambdas[k] = float(v)
-        for src, dst in _YAML_LAMBDA_KEYS.items():
-            if data.get(src) is not None:
-                lambdas[dst] = float(data[src])
-        nested_band = data.get("band_lambdas") or data.get("band") or {}
-        for k, v in nested_band.items():
-            if v is not None:
-                band[k] = float(v)
-        for b in DWT_SUBBANDS:
-            for kind in ("area", "tv", "rob"):
-                for key in (f"lambda_{kind}_{b}", f"lam_{kind}_{b}", f"{kind}_{b}"):
-                    if data.get(key) is not None:
-                        band[f"{kind}_{b}"] = float(data[key])
-        raw_dis = data.get("disabled_subbands") or []
-        disabled = [str(s).upper() for s in raw_dis]
-        wavelet = str(data.get("wavelet") or data.get("wavelet_name") or wavelet)
-        if wavelet.lower() in ("haar", "db1"):
-            wavelet = "db1"
-    return {
-        "lambdas": lambdas,
-        "band_lambdas": band,
-        "disabled_subbands": disabled,
-        "wavelet": wavelet,
-        "path": str(path),
-    }
-
-
 def parse_fft_yaml(path=None) -> dict:
-    """Load polar-FFT Section 0 weights and bin settings from configs/fft.yaml."""
+    """Load FFT λ and polar bins from configs/fft.yaml (the only FFT default source)."""
     path = Path(path) if path is not None else DEFAULT_FFT_YAML
-    lambdas = dict(DEFAULT_LAMBDAS_FFT)
-    radial = 16
-    angular = 16
-    temp = 0.25
-    thresh = 0.5
-    noise = 0.1
-    n_lpf = 50
-    if path.is_file():
-        data = load_yaml_file(path)
-        nested = data.get("lambdas") or {}
-        for k, v in nested.items():
-            if k in lambdas and v is not None and k != "area":
-                lambdas[k] = float(v)
-        for src, dst in _YAML_LAMBDA_KEYS.items():
-            if dst == "area":
-                continue
-            if data.get(src) is not None:
-                lambdas[dst] = float(data[src])
-        radial = int(data.get("fft_radial_bins", radial))
-        angular = int(data.get("fft_angular_bins", angular))
-        temp = float(data.get("mask_temperature", temp))
-        thresh = float(data.get("mask_threshold", thresh))
-        noise = float(data.get("noise_scale", noise))
-        n_lpf = int(data.get("n_lpf_radii", n_lpf))
+    data = load_yaml_file(path)
+    lambdas = {k: 0.0 for k in LOSS_TERMS}
+    nested = data.get("lambdas") or {}
+    for k, v in nested.items():
+        if k in lambdas and v is not None and k != "area":
+            lambdas[k] = float(v)
     lambdas["area"] = 0.0
     return {
         "lambdas": lambdas,
-        "fft_radial_bins": radial,
-        "fft_angular_bins": angular,
-        "fft_mask_temperature": temp,
-        "mask_thresh": thresh,
-        "fft_noise_scale": noise,
-        "n_lpf_radii": n_lpf,
+        "fft_radial_bins": int(data.get("fft_radial_bins", 16)),
+        "fft_angular_bins": int(data.get("fft_angular_bins", 16)),
+        "fft_mask_temperature": float(data.get("mask_temperature", 0.25)),
+        "mask_thresh": float(data.get("mask_threshold", 0.5)),
+        "fft_noise_scale": float(data.get("noise_scale", 0.1)),
+        "n_lpf_radii": int(data.get("n_lpf_radii", 50)),
         "path": str(path),
     }
-
-
-def lambdas_with_overrides(**overrides) -> dict:
-    out = dict(DEFAULT_LAMBDAS)
-    out.update(overrides)
-    return out
 
 
 def sequential_configs() -> dict:

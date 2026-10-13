@@ -380,39 +380,6 @@ def plot_section0_step_progression_grids(
         )
 
 
-def plot_dwt_best_band_grid(
-    path: Path,
-    original: np.ndarray,
-    e_full: np.ndarray,
-    band_e: Dict[str, np.ndarray],
-    band_m: Dict[str, np.ndarray],
-    p_sub: Dict[str, float],
-    best_ef1: float,
-    best_step: int,
-    p_energy: float = 0.0,
-) -> None:
-    """Row 0: original | e_full | LL | LH | HL | HH (pixel IDWT per band). Row 1: masks."""
-    from dwt import SUBBANDS
-
-    pe = f"\np_E={100.0 * p_energy:.1f}%" if p_energy else ""
-    caps_e = ["original", f"e_full\nEF1_E={best_ef1:.2f} @{best_step}{pe}"]
-    caps_m = ["", ""]
-    for b in SUBBANDS:
-        pct = 100.0 * float(p_sub.get(b, 0.0))
-        caps_e.append(f"e_{b.lower()}\np={pct:.1f}%")
-        caps_m.append(f"m_{b.lower()}\np={pct:.1f}%")
-    row_e = [(original, caps_e[0]), (e_full, caps_e[1])]
-    row_m = [(original, ""), (np.zeros_like(original), "")]
-    for i, b in enumerate(SUBBANDS, start=2):
-        row_e.append((band_e[b], caps_e[i]))
-        row_m.append((band_m[b], caps_m[i]))
-    image_grid(
-        path,
-        [row_e, row_m],
-        suptitle="Best energy-weighted EF1 DWT explanations (row1: IDWT per band; row2: masks)",
-    )
-
-
 BACKBONE_BAR_COLORS = {
     "resnet18": "#4C78A8",
     "vit_b_16": "#E45756",
@@ -425,16 +392,16 @@ BACKBONE_BAR_LABELS = {
 }
 
 
-def plot_dwt_freq_bias_bars(
+def plot_freq_bias_bars(
     path: Path,
     kept_by_backbone: Dict[str, Dict[str, float]],
     title: str,
-    bands: Sequence[str] = ("LL", "LH", "HL", "HH"),
+    bands: Sequence[str] = ("low", "mid", "high"),
     std_by_backbone: Optional[Dict[str, Dict[str, float]]] = None,
-    xlabel: str = "frequency band",
+    xlabel: str = "radial band",
     ylabel: str = "retained energy / band energy (%)",
 ) -> None:
-    """Grouped bars: for each subband, fraction of that band's energy kept, one bar per backbone."""
+    """Grouped bars: fraction of that band's energy kept, one bar per backbone."""
     bands = list(bands)
     models = list(kept_by_backbone.keys())
     x = np.arange(len(bands), dtype=float)

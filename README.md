@@ -23,7 +23,7 @@ WaveX-style **rfft2** polar bins (default 16 radial × 16 angular). A U-Net on R
 
 **Checkpoint:** keep the training step with highest **EF1** = HM(`1 − p_energy`, `conf(e)`), where `p_energy` is the retained FFT energy `||m ⊙ FFT(x)||² / ||FFT(x)||²`.
 
-**Where weights live:** FFT λ and polar bins are `configs/fft.yaml` (CLI overrides: `--lam-energy`, `--lam-rob`, …). If that file is missing, `config.py` `DEFAULT_LAMBDAS_FFT` is used. Paths, steps, and eval-set size also live in `config.py`. There is no separate training-protocol file.
+**Where weights live:** FFT λ and polar bins are **only** in `configs/fft.yaml` (CLI: `--lam-energy`, `--lam-rob`, …). `config.py` holds paths, `STEPS`, and pixel-section `DEFAULT_LAMBDAS` (Sections 1–5).
 
 **Frequency bias:** radial-band energy is averaged only over images where the explanation keeps the original top-1 class. A separate histogram (ResNet vs ViT) shows `Δconf = conf(x) − conf(e)` for top-1 kept vs lost.
 

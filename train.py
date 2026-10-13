@@ -7,7 +7,7 @@ from __future__ import annotations
 
 import time
 from dataclasses import dataclass, field
-from typing import Dict, List, Optional, Sequence, Tuple
+from typing import Dict, List, Optional, Sequence
 
 import torch
 import torch.nn as nn
@@ -82,9 +82,6 @@ class TrainConfig:
     ef1_version: str = "legacy"  # "legacy" | "new" (ef1_new_version in metrics.py)
     save_expl_steps: Optional[Sequence[int]] = None
     save_expl_dir: Optional[str] = None
-    band_lambdas: Dict[str, float] = field(default_factory=dict)
-    disabled_subbands: Tuple[str, ...] = ()
-    wavelet: str = "db1"
     fft_radial_bins: int = 16
     fft_angular_bins: int = 16
     fft_mask_temperature: float = 0.25

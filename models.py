@@ -85,20 +85,6 @@ class UNetCSAE(nn.Module):
         return self.out_conv(u1)
 
 
-def UNetDWT(in_channels: int = 3, out_channels: int = 4) -> UNetCSAE:
-    """U-Net that maps an RGB image to wavelet-subband mask logits at full resolution.
-
-    Output is later avg-pooled to H/2 to match one-level DWT coefficient grids.
-    ``out_channels`` is the number of *active* subbands (disabled bands are not predicted).
-    """
-    net = UNetCSAE(in_channels=in_channels, out_channels=out_channels)
-    # WaveX: small final conv so sigmoid starts near 0.5, not saturated 1s.
-    nn.init.xavier_uniform_(net.out_conv.weight, gain=0.1)
-    if net.out_conv.bias is not None:
-        nn.init.zeros_(net.out_conv.bias)
-    return net
-
-
 def _fourier_conv_block(in_ch, out_ch):
     return nn.Sequential(
         nn.Conv2d(in_ch, out_ch, 3, padding=1, bias=False),

@@ -1,6 +1,6 @@
 """Section 0 — polar FFT EXP-CAM (generative).
 
-Trains FourierMaskNet for SECTION0_STEPS with CE off by default, logs
+Trains FourierMaskNet for STEPS with CE off by default, logs
 EF1 = HM(1−p_E, conf(e)), checkpoints the step with highest EF1,
 and writes WaveX-style FFT figures plus LPF vs greedy curves.
 """
@@ -20,7 +20,6 @@ ensure_pkg_path()
 from cli import (
     add_common_args,
     add_loss_lambda_args,
-    dwt_settings_from_args,
     fft_settings_from_args,
     lambdas_from_args,
     resolve_run,
@@ -29,29 +28,24 @@ from classifiers import load_classifier
 from config import (
     SECTION0_IMAGE_SLOTS,
     SECTION0_PER_CLASS,
-    SECTION0_STEPS,
+    SNAPSHOT_EVERY,
+    STEPS,
     ef1_snapshot_steps,
     figure_dir,
 )
-from data import load_pil, load_tensor, section0_image_records
+from data import load_pil, section0_image_records
 from io_utils import load_json, rows_to_excel, save_json
-from runner import maybe_train_and_eval, maybe_train_and_eval_dwt, maybe_train_and_eval_fft, run_dir
+from runner import maybe_train_and_eval, maybe_train_and_eval_fft, run_dir
 from train import TrainConfig, image_seed, log
-from train_dwt import save_dwt_best_band_expl_from_run
 from viz import (
     plot_delta_conf_histograms,
-    plot_dwt_freq_bias_bars,
     plot_ef1_section0_figures,
+    plot_freq_bias_bars,
     plot_lpf_vs_greedy,
     plot_section0_step_progression_grids,
 )
 
-DEFAULT_STEP_GRID_EVERY = (40,)
-
-
 def _section_name(args) -> str:
-    if getattr(args, "dwt", False):
-        return "section0_dwt"
     if getattr(args, "pixel", False):
         return "section0_new_score" if getattr(args, "ef1_new_version", False) else "section0"
     return "section0_fft"
@@ -114,85 +108,6 @@ def _plot_step_grids_for_backbone(out_root, section, backbone, subset, grid_ever
             f"[figures] {backbone}: step grids every {list(grid_every)} "
             f"-> {fig_dir}  ({n} images)"
         )
-
-
-def _plot_dwt_band_grids_for_backbone(out_root, section, backbone, subset, eval_root, device) -> None:
-    from shutil import copy2
-
-    from classifiers import load_classifier
-    from dwt import dwt_level1, reconstruct_explanation, unet_masks_to_dict
-    from runner import load_masks
-
-    fig_dir = figure_dir(out_root, section, backbone)
-    bundle = load_classifier(backbone, device)
-    n = 0
-    for rec in subset:
-        out_dir = run_dir(out_root, section, backbone, "ef1_full", rec["id"])
-        best_dir = out_dir / "best_ef1"
-        grid_src = best_dir / "band_expl_grid.png"
-        cname = rec["class_name"].replace(" ", "_")
-        grid_dst = fig_dir / f"Fig0_dwt_bands_{rec['id']}_{cname}.png"
-        if grid_src.exists():
-            copy2(grid_src, grid_dst)
-            n += 1
-            continue
-        if not (out_dir / "masks.pt").exists():
-            continue
-        x = load_tensor(rec, bundle.preprocess, device, root=Path(eval_root))
-        mask_hard, _ = load_masks(out_dir, device)
-        meta_path = best_dir / "best_ef1_meta.json"
-        meta = load_json(meta_path) if meta_path.exists() else load_json(out_dir / "metrics.json")
-        hard_dict = unet_masks_to_dict(mask_hard)
-        bands = dwt_level1(x)
-        e_full = reconstruct_explanation(bands, unet_masks_to_dict(mask_hard.float()), hard_dict)
-        save_dwt_best_band_expl_from_run(out_dir, x, mask_hard, e_full, meta)
-        if (best_dir / "band_expl_grid.png").exists():
-            copy2(best_dir / "band_expl_grid.png", grid_dst)
-            n += 1
-    if n:
-        log(f"[figures] {backbone}: DWT best-EF1 band grids -> {fig_dir}  ({n} images)")
-
-
-def _plot_dwt_freq_bias(out_root, section, backbones, subset, eval_root, device) -> None:
-    """Per-image grouped bars: kept energy fraction per subband, ResNet vs ViT."""
-    from classifiers import load_classifier
-    from dwt import SUBBANDS, band_energy_kept_fractions, dwt_level1, unet_masks_to_dict
-    from runner import load_masks
-
-    pair = [b for b in ("resnet18", "vit_b_16") if b in backbones]
-    if len(pair) < 2:
-        pair = list(backbones)
-    if not pair:
-        return
-    dest = Path(out_root) / section / "figures_freq_bias"
-    bundle = load_classifier(pair[0], device)
-    n = 0
-    for rec in subset:
-        kept = {}
-        x = None
-        for bb in pair:
-            out_dir = run_dir(out_root, section, bb, "ef1_full", rec["id"])
-            if not (out_dir / "masks.pt").exists():
-                continue
-            if x is None:
-                x = load_tensor(rec, bundle.preprocess, device, root=Path(eval_root))
-            mask_hard, _ = load_masks(out_dir, device)
-            bands = dwt_level1(x)
-            hard_dict = unet_masks_to_dict(mask_hard)
-            kept[bb] = band_energy_kept_fractions(bands, hard_dict)
-        if len(kept) < 1:
-            continue
-        cname = rec["class_name"].replace(" ", "_")
-        plot_dwt_freq_bias_bars(
-            dest / f"Fig0_freq_bias_{rec['id']}_{cname}.png",
-            kept,
-            title=f"Frequency bias — {rec['class_name']} (img {rec['id']})",
-            bands=SUBBANDS,
-        )
-        save_json(dest / f"Fig0_freq_bias_{rec['id']}_{cname}.json", {"image_id": rec["id"], "kept_energy_frac": kept})
-        n += 1
-    if n:
-        log(f"[figures] freq-bias bars -> {dest}  ({n} images, models={pair})")
 
 
 def _plot_fft_grids_for_backbone(out_root, section, backbone, subset) -> None:
@@ -296,7 +211,7 @@ def _plot_fft_freq_bias(out_root, section, backbones, subset) -> None:
 
     n_note = ", ".join(f"{bb} {n_top1[bb]}/{n_total[bb]}" for bb in pair)
     if mean_kept:
-        plot_dwt_freq_bias_bars(
+        plot_freq_bias_bars(
             dest / "Fig0_freq_bias_mean.png",
             mean_kept,
             title=f"Mean retained energy (top-1 preserved)  n={n_note}",
@@ -423,30 +338,15 @@ def run_section0(args) -> None:
     )
     snap_steps = tuple(args.snapshot_steps) if args.snapshot_steps else ef1_snapshot_steps(max_step=steps)
     rows = []
-    use_fft = not args.dwt and not getattr(args, "pixel", False)
+    use_fft = not getattr(args, "pixel", False)
     fft_cfg = fft_settings_from_args(args) if use_fft else {}
-    if args.dwt:
-        dwt_cfg = dwt_settings_from_args(args)
-        lambdas = dwt_cfg["lambdas"]
-        band_lambdas = dwt_cfg["band_lambdas"]
-        disabled_subbands = dwt_cfg["disabled_subbands"]
-        wavelet = dwt_cfg["wavelet"]
-        ef1_version = "legacy"
-        train_fn = maybe_train_and_eval_dwt
-        domain = "dwt"
-    elif use_fft:
+    if use_fft:
         lambdas = fft_cfg["lambdas"]
-        band_lambdas = {}
-        disabled_subbands = ()
-        wavelet = None
         ef1_version = "new"
         train_fn = maybe_train_and_eval_fft
         domain = "fft"
     else:
         lambdas = lambdas_from_args(args)
-        band_lambdas = {}
-        disabled_subbands = ()
-        wavelet = None
         ef1_version = "new" if args.ef1_new_version else "legacy"
         train_fn = maybe_train_and_eval
         domain = "pixel"
@@ -467,9 +367,6 @@ def run_section0(args) -> None:
             expl_dir = out_dir / "snapshots"
             cfg = TrainConfig(
                 lambdas=lambdas,
-                band_lambdas=band_lambdas,
-                disabled_subbands=disabled_subbands,
-                wavelet=wavelet or "db1",
                 steps=steps,
                 seed=image_seed(rec["id"], backbone, args.seed),
                 log_every=args.log_every,
@@ -487,8 +384,8 @@ def run_section0(args) -> None:
                 n_lpf_radii=int(fft_cfg.get("n_lpf_radii", 50)),
             )
             extra = {
-                "protocol": "ef1_fft" if use_fft else ("ef1_dwt" if args.dwt else "ef1"),
-                "config": "Full_no_ce_fft" if use_fft else ("Full_no_ce_dwt" if args.dwt else "Full_no_ce"),
+                "protocol": "ef1_fft" if use_fft else "ef1",
+                "config": "Full_no_ce_fft" if use_fft else "Full_no_ce",
                 "ef1_version": ef1_version,
             }
             if use_fft:
@@ -527,14 +424,10 @@ def run_section0(args) -> None:
         _plot_step_grids_for_backbone(
             out_root, section, backbone, subset, tuple(args.step_grid_every), eval_root
         )
-        if args.dwt:
-            _plot_dwt_band_grids_for_backbone(out_root, section, backbone, subset, eval_root, device)
         if use_fft:
             _plot_fft_grids_for_backbone(out_root, section, backbone, subset)
             _plot_fft_lpf_mean(out_root, section, backbone, subset)
 
-    if args.dwt:
-        _plot_dwt_freq_bias(out_root, section, args.backbones, subset, eval_root, device)
     if use_fft:
         _plot_fft_freq_bias(out_root, section, args.backbones, subset)
 
@@ -556,7 +449,7 @@ def _threshold_stats(series, tau: float) -> dict:
 
 
 def run_section0_figures_only(args) -> None:
-    eval_set, _, device = resolve_run(args)
+    eval_set, _, _device = resolve_run(args)
     out_root = args.out
     section = _section_name(args)
     _apply_subset_args(args)
@@ -579,35 +472,26 @@ def run_section0_figures_only(args) -> None:
         _plot_step_grids_for_backbone(
             out_root, section, backbone, subset, grid_every, eval_root
         )
-        if args.dwt:
-            _plot_dwt_band_grids_for_backbone(out_root, section, backbone, subset, eval_root, device)
-        if not args.dwt and not getattr(args, "pixel", False):
+        if not getattr(args, "pixel", False):
             _plot_fft_grids_for_backbone(out_root, section, backbone, subset)
             _plot_fft_lpf_mean(out_root, section, backbone, subset)
-    if args.dwt:
-        _plot_dwt_freq_bias(out_root, section, args.backbones, subset, eval_root, device)
-    if not args.dwt and not getattr(args, "pixel", False):
+    if not getattr(args, "pixel", False):
         _plot_fft_freq_bias(out_root, section, args.backbones, subset)
 
 
 def main(argv=None):
     p = add_common_args(argparse.ArgumentParser(description="Section 0: EF1 diagnostic training"))
     add_loss_lambda_args(p)
-    p.set_defaults(steps=SECTION0_STEPS, no_ce=True)
+    p.set_defaults(steps=STEPS, no_ce=True)
     p.add_argument(
         "--pixel",
         action="store_true",
         help="Pixel EXP-CAM Section 0 (legacy). Default is polar FFT.",
     )
     p.add_argument(
-        "--dwt",
-        action="store_true",
-        help="Legacy DWT domain (kept for old runs). Default is polar FFT.",
-    )
-    p.add_argument(
         "--ef1-new-version",
         action="store_true",
-        help="Pixel mode only: use ef1_new_version=HM(conf, 1−p). Ignored with --dwt.",
+        help="Pixel mode only: use ef1_new_version=HM(conf, 1−p).",
     )
     p.add_argument(
         "--ef1-threshold",
@@ -654,7 +538,7 @@ def main(argv=None):
         "--step-grid-every",
         type=int,
         nargs="+",
-        default=list(DEFAULT_STEP_GRID_EVERY),
+        default=[SNAPSHOT_EVERY],
         help="Sampling interval for step progression grids (default: 40).",
     )
     args = p.parse_args(argv)

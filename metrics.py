@@ -147,13 +147,11 @@ def evaluate_explanation(
     mask_prob: Optional[torch.Tensor] = None,
     backgrounds: Optional[Sequence[torch.Tensor]] = None,
     e: Optional[torch.Tensor] = None,
-    p_subbands: Optional[Dict[str, float]] = None,
     p_energy: Optional[float] = None,
 ) -> Dict[str, float]:
     """Compute the shared metric vector for one (image, mask) pair.
 
-    Pass ``e`` directly for DWT/FFT reconstructions. Optional ``p_subbands``
-    reports per Haar band sparsity (LL, LH, HL, HH).
+    Pass ``e`` directly for FFT reconstructions.
     """
     if e is None:
         m = mask_hard.float()
@@ -169,9 +167,7 @@ def evaluate_explanation(
     y = logits_x.argmax(dim=1)
     px = F.softmax(logits_x, dim=1)
     pe = F.softmax(logits_e, dim=1)
-    if p_subbands is not None:
-        p_val = sum(p_subbands.values()) / max(len(p_subbands), 1)
-    elif mask_hard is not None and mask_hard.numel():
+    if mask_hard is not None and mask_hard.numel():
         m = mask_hard.float()
         if m.dim() == 3:
             m = m.unsqueeze(0)
@@ -201,10 +197,6 @@ def evaluate_explanation(
         out["binarization_sharpness"] = binarization_sharpness(
             mask_prob if mask_prob is not None else m
         )
-    if p_subbands:
-        for band, pv in p_subbands.items():
-            out[f"p_{band.lower()}"] = float(pv)
-            out[f"p_{band.lower()}_pct"] = 100.0 * float(pv)
     if backgrounds is not None and mask_hard is not None:
         m = mask_hard.float()
         if m.dim() == 3:
