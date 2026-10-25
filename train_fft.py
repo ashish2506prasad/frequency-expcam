@@ -19,6 +19,7 @@ except ImportError:
 ensure_pkg_path()
 
 from classifiers import ClassifierBundle, run_with_acts
+from config import MASK_MODEL
 from fft import FourierPolarMasker
 from losses import (
     binarization_loss,
@@ -28,7 +29,7 @@ from losses import (
     layer_act_loss,
 )
 from metrics import class_confidence, confidence_delta, ef1_new_version
-from models import FourierMaskNet
+from models import FourierMaskNet, SpectrumMask
 from train import TrainConfig, TrainResult, log, seed_all
 
 
@@ -44,6 +45,7 @@ class FFTTrainResult(TrainResult):
     noise_scale: float = 0.1
     radial_bins: int = 16
     angular_bins: int = 16
+    mask_model: str = "unet"
 
 
 def train_mask_fft(bundle: ClassifierBundle, x: torch.Tensor, cfg: TrainConfig) -> FFTTrainResult:
@@ -56,9 +58,18 @@ def train_mask_fft(bundle: ClassifierBundle, x: torch.Tensor, cfg: TrainConfig) 
     n_lpf = int(getattr(cfg, "n_lpf_radii", 50) or 50)
 
     fourier = FourierPolarMasker(radial, angular).to(device)
-    mask_net = FourierMaskNet(
-        in_channels=3, radial_bins=radial, angular_bins=angular, temperature=temp
-    ).to(device)
+    model_name = str(getattr(cfg, "mask_model", None) or MASK_MODEL).strip().lower()
+    use_spectrum = model_name in ("none", "pixel", "direct", "spectrum")
+    if use_spectrum:
+        mask_net = SpectrumMask(int(x.shape[-2]), int(x.shape[-1])).to(device)
+        arch = "SpectrumMask"
+    elif model_name in ("unet", "polar"):
+        mask_net = FourierMaskNet(
+            in_channels=3, radial_bins=radial, angular_bins=angular, temperature=temp
+        ).to(device)
+        arch = "FourierMaskNet_polar"
+    else:
+        raise ValueError(f"Unknown mask_model={model_name!r}; expected 'unet' or 'none'")
     mask_net.train()
     opt = torch.optim.Adam(mask_net.parameters(), lr=cfg.lr)
 
@@ -82,11 +93,16 @@ def train_mask_fft(bundle: ClassifierBundle, x: torch.Tensor, cfg: TrainConfig) 
     t0 = time.perf_counter()
     if cfg.log_every:
         log(
-            f"  training FFT polar U-Net  steps={cfg.steps}  bins={radial}x{angular}  "
-            f"T={temp:g}  checkpoint=EF1=HM(1−p_E, conf(e))  "
-            f"λ_energy={cfg.lambdas.get('energy', 0):g}  "
-            f"λ_rob={cfg.lambdas.get('rob', 0):g}  λ_kl={cfg.lambdas.get('kl', 0):g}  "
-            f"lr={cfg.lr}  seed={cfg.seed}"
+            f"  training FFT {arch}  steps={cfg.steps}  "
+            + (
+                f"spectrum {x.shape[-2]}x{x.shape[-1] // 2 + 1}  "
+                if use_spectrum
+                else f"bins={radial}x{angular}  "
+            )
+            + f"T={temp:g}  checkpoint=EF1=HM(1−p_E, conf(e))  "
+            + f"λ_energy={cfg.lambdas.get('energy', 0):g}  "
+            + f"λ_rob={cfg.lambdas.get('rob', 0):g}  λ_kl={cfg.lambdas.get('kl', 0):g}  "
+            + f"lr={cfg.lr}  seed={cfg.seed}"
         )
 
     for t in range(1, cfg.steps + 1):
@@ -105,7 +121,7 @@ def train_mask_fft(bundle: ClassifierBundle, x: torch.Tensor, cfg: TrainConfig) 
             loss_act = loss_act + w * layer_act_loss(name, acts_x[name], acts_e[name], shallow)
 
         coeff = fourier.fft2(x)
-        half_soft = fourier.expand_polar_mask(m_soft, x.shape[-2], x.shape[-1])
+        half_soft = fourier.as_half_mask(m_soft, x.shape[-2], x.shape[-1])
         p_energy_t = fourier.kept_energy_fraction(coeff, half_soft).mean()
         loss_energy = p_energy_t
         loss_bin = binarization_loss(m_soft)
@@ -141,7 +157,7 @@ def train_mask_fft(bundle: ClassifierBundle, x: torch.Tensor, cfg: TrainConfig) 
                 m_hard = (m_soft > cfg.mask_thresh).float()
                 e_hard = fourier.construct_explanation(x, m_hard)
                 logits_eh = bundle.model(e_hard)
-                half_h = fourier.expand_polar_mask(m_hard, x.shape[-2], x.shape[-1])
+                half_h = fourier.as_half_mask(m_hard, x.shape[-2], x.shape[-1])
                 p_e = float(fourier.kept_energy_fraction(coeff.detach(), half_h).mean().item())
                 p_bins = float(m_hard.mean().item())
                 conf_e = class_confidence(logits_eh, y)
@@ -203,7 +219,7 @@ def train_mask_fft(bundle: ClassifierBundle, x: torch.Tensor, cfg: TrainConfig) 
             m_hard = (m_soft > cfg.mask_thresh).float()
             e = fourier.construct_explanation(x, m_hard)
             coeff = fourier.fft2(x)
-            half_h = fourier.expand_polar_mask(m_hard, x.shape[-2], x.shape[-1])
+            half_h = fourier.as_half_mask(m_hard, x.shape[-2], x.shape[-1])
             p_e = float(fourier.kept_energy_fraction(coeff, half_h).mean().item())
             p_bins = float(m_hard.mean().item())
             logits_eh = bundle.model(e)
@@ -220,7 +236,7 @@ def train_mask_fft(bundle: ClassifierBundle, x: torch.Tensor, cfg: TrainConfig) 
 
     with torch.no_grad():
         coeff = fourier.fft2(x)
-        half_h = fourier.expand_polar_mask(m_hard, x.shape[-2], x.shape[-1])
+        half_h = fourier.as_half_mask(m_hard, x.shape[-2], x.shape[-1])
         radial_kept = fourier.radial_band_kept_fractions(coeff, half_h)
 
     if cfg.log_every:
@@ -274,6 +290,7 @@ def train_mask_fft(bundle: ClassifierBundle, x: torch.Tensor, cfg: TrainConfig) 
         noise_scale=noise_scale,
         radial_bins=radial,
         angular_bins=angular,
+        mask_model="none" if use_spectrum else "unet",
     )
 
 
@@ -288,13 +305,14 @@ def _save_fft_snapshot(x, m_hard, e, fourier, out_dir, step, row) -> None:
     dest = ensure_dir(Path(out_dir) / f"step_{step:04d}")
     x_np = panel_original(x)
     e_np = panel_original(e)
-    polar = m_hard[0, 0].detach().cpu().numpy()
+    m_vis = m_hard[0, 0].detach().cpu().numpy()
+    m_label = "m spectrum (hard)" if fourier.is_spectrum_mask(m_hard, x.shape[-2], x.shape[-1]) else "m polar (hard)"
     triple_panel(
         dest / "x_m_e.png",
         x_np,
-        polar,
+        m_vis,
         e_np,
-        labels=("x (original)", "m polar (hard)", "e (IFFT)"),
+        labels=("x (original)", m_label, "e (IFFT)"),
         suptitle=(
             f"step={step}  conf(x)={row['conf_x']:.3f}  conf(e)={row['conf_e']:.3f}  "
             f"retained p_E={100 * row['p_energy']:.1f}% of ||FFT(x)||²  Δconf={row['delta_conf']:.3f}"
@@ -324,8 +342,8 @@ def save_fft_best_expl(
     dest = ensure_dir(Path(out_dir) / "best_ef1")
     with torch.no_grad():
         coeff = fourier.fft2(x)
-        half_s = fourier.expand_polar_mask(m_soft, x.shape[-2], x.shape[-1])
-        half_h = fourier.expand_polar_mask(m_hard, x.shape[-2], x.shape[-1])
+        half_s = fourier.as_half_mask(m_soft, x.shape[-2], x.shape[-1])
+        half_h = fourier.as_half_mask(m_hard, x.shape[-2], x.shape[-1])
         e_soft = fourier.ifft2_real(coeff * half_s, signal_hw=x.shape[-2:])
         mag_x = fourier.fft_log_magnitude(coeff, x.shape[-1])
         mag_s = fourier.fft_log_magnitude(coeff * half_s, x.shape[-1])
@@ -359,6 +377,11 @@ def save_fft_best_expl(
         conf_x=conf_x,
         conf_e=conf_e,
         p_energy=p_e,
+        mask_kind=(
+            "spectrum"
+            if fourier.is_spectrum_mask(m_soft, x.shape[-2], x.shape[-1])
+            else "polar"
+        ),
     )
     Image.fromarray((np.clip(panel_original(e), 0, 1) * 255).astype(np.uint8)).save(dest / "e.png")
     save_json(
@@ -395,13 +418,17 @@ def lpf_vs_greedy_comparison(
         conf_x = class_confidence(logits_x, y)
         coeff = fourier.fft2(x)
         total_e = float((coeff.abs() ** 2).sum().item())
-        bin_e = fourier.polar_bin_energies(coeff, x.shape[-2], x.shape[-1])[0]
+        spectrum = fourier.is_spectrum_mask(m_soft, x.shape[-2], x.shape[-1])
+        bin_e = None if spectrum else fourier.polar_bin_energies(coeff, x.shape[-2], x.shape[-1])[0]
         scores = m_soft.detach()
         rows = []
         for r in radii:
             e_lpf, p_e, _ = fourier.lowpass_image(x, float(r))
             target = float(p_e.item()) * total_e
-            m_g = fourier.greedy_polar_mask_for_energy(scores, bin_e, target)
+            if spectrum:
+                m_g = fourier.greedy_spectrum_mask_for_energy(scores, coeff, target)
+            else:
+                m_g = fourier.greedy_polar_mask_for_energy(scores, bin_e, target)
             e_g = fourier.construct_explanation(x, m_g)
             conf_lpf = class_confidence(bundle.model(e_lpf), y)
             conf_g = class_confidence(bundle.model(e_g), y)
@@ -424,6 +451,7 @@ def lpf_vs_greedy_comparison(
         [r["delta_conf_greedy"] for r in rows],
         title="Δconf vs circular cutoff radius (same energy)",
         p_energy=[r["p_energy"] for r in rows],
+        greedy_label="greedy spectrum bins" if spectrum else "greedy polar bins",
     )
     return {"rows": rows, "conf_x": conf_x}
 
@@ -444,6 +472,8 @@ def save_fft_mask_tensors(out_dir, result: FFTTrainResult) -> None:
             "domain": "fft",
             "radial_bins": result.radial_bins,
             "angular_bins": result.angular_bins,
+            "mask_model": result.mask_model,
+            "mask_kind": "spectrum" if result.mask_model == "none" else "polar",
         },
         out_dir / "masks.pt",
     )

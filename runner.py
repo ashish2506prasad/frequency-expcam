@@ -183,7 +183,10 @@ def maybe_train_and_eval_fft(
             "optimizer": "Adam",
             "lr": cfg.lr,
             "per_image": True,
-            "architecture": "FourierMaskNet_polar",
+            "architecture": (
+                "SpectrumMask" if getattr(result, "mask_model", "unet") == "none" else "FourierMaskNet_polar"
+            ),
+            "mask_model": getattr(result, "mask_model", "unet"),
             "domain": "fft",
             "checkpoint": "ef1_hm_conf_energy",
         },

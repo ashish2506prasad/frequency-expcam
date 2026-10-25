@@ -165,8 +165,22 @@ class FourierMaskNet(nn.Module):
         return torch.sigmoid(logits / temp)
 
 
+class SpectrumMask(nn.Module):
+    """Learnable 1-channel mask on the rFFT half-spectrum, shared across RGB."""
+
+    def __init__(self, height: int, width: int, init: float = 0.0):
+        super().__init__()
+        coeff_w = int(width) // 2 + 1
+        self.logits = nn.Parameter(torch.full((1, 1, int(height), coeff_w), float(init)))
+
+    def forward(self, x=None):
+        return self.logits
+
+
 def last_shared_layer(mask_net: nn.Module) -> nn.Module:
     """Last layer used by all decoder branches (for GradNorm-style balancing)."""
+    if isinstance(mask_net, SpectrumMask):
+        return mask_net
     if isinstance(mask_net, FourierMaskNet):
         return mask_net.dec1
     if isinstance(mask_net, UNetCSAE):

@@ -355,7 +355,8 @@ def run_section0(args) -> None:
     log(
         f"Section 0  device={device}  subset={len(subset)} images "
         f"({args.section0_per_class}/class)  steps={steps}  section={section}  "
-        f"domain={domain}  checkpoint=EF1=HM(1−p_E, conf(e))  "
+        f"domain={domain}  mask_model={fft_cfg.get('mask_model', '—')}  "
+        f"checkpoint=EF1=HM(1−p_E, conf(e))  "
         f"lambdas={lambdas}  snapshots={snap_steps[0]}…{snap_steps[-1] if snap_steps else '—'}"
     )
 
@@ -382,6 +383,7 @@ def run_section0(args) -> None:
                 fft_mask_temperature=float(fft_cfg.get("fft_mask_temperature", 0.25)),
                 fft_noise_scale=float(fft_cfg.get("fft_noise_scale", 0.1)),
                 n_lpf_radii=int(fft_cfg.get("n_lpf_radii", 50)),
+                mask_model=fft_cfg.get("mask_model"),
             )
             extra = {
                 "protocol": "ef1_fft" if use_fft else "ef1",

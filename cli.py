@@ -14,7 +14,7 @@ ensure_pkg_path()
 
 import torch
 
-from config import DEFAULT_BACKBONES, SEED, STEPS, add_where_args
+from config import DEFAULT_BACKBONES, MASK_MODEL, SEED, STEPS, add_where_args
 from data import load_eval_set
 
 _CUDA_OK = None
@@ -98,6 +98,12 @@ def add_common_args(p: argparse.ArgumentParser) -> argparse.ArgumentParser:
         action="store_true",
         help="Omit cross-entropy (CE) loss from U-Net training (all backbones).",
     )
+    p.add_argument(
+        "--mask-model",
+        choices=("unet", "none"),
+        default=None,
+        help=f"FFT mask: unet (polar bins) or none (direct rFFT spectrum). Default: {MASK_MODEL} from config.py.",
+    )
     return p
 
 
@@ -135,11 +141,17 @@ def fft_settings_from_args(args) -> dict:
     lambdas["area"] = 0.0
     if getattr(args, "lam_area", None) is not None:
         print("[fft] ignoring --lam-area (area loss is not used in polar FFT)", flush=True)
-    return {
+    out = {
         **parsed,
         "lambdas": lambdas,
         "yaml_path": parsed["path"],
     }
+    cli_model = getattr(args, "mask_model", None)
+    if cli_model:
+        out["mask_model"] = str(cli_model).strip().lower()
+    elif not out.get("mask_model"):
+        out["mask_model"] = C.MASK_MODEL
+    return out
 
 
 def lambdas_from_args(args, base: dict | None = None) -> dict:

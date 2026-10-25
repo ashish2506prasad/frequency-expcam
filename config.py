@@ -29,7 +29,7 @@ N_PER_CLASS = 20
 QUALITATIVE_PER_CLASS = 2
 SECTION0_PER_CLASS = 20
 SECTION0_IMAGE_SLOTS = tuple(range(10))
-STEPS = 400
+STEPS = 500
 SNAPSHOT_EVERY = 20
 
 DEFAULT_BACKBONES = ("resnet18", "efficientnet_b0", "vit_b_16")
@@ -52,6 +52,8 @@ LR = 5e-5
 TEMPERATURE = 2.0
 MASK_THRESH = 0.5
 ROB_K_BACKGROUNDS = 3
+# "unet" = FourierMaskNet polar bins; "none" = one shared mask on the rFFT half-spectrum.
+MASK_MODEL = "unet"
 
 DEFAULT_LAMBDAS = {
     "act": 10.0,
@@ -299,6 +301,7 @@ def parse_fft_yaml(path=None) -> dict:
         "mask_thresh": float(data.get("mask_threshold", 0.5)),
         "fft_noise_scale": float(data.get("noise_scale", 0.1)),
         "n_lpf_radii": int(data.get("n_lpf_radii", 50)),
+        "mask_model": str(data.get("mask_model") or MASK_MODEL).strip().lower(),
         "path": str(path),
     }
 

@@ -87,6 +87,7 @@ class TrainConfig:
     fft_mask_temperature: float = 0.25
     fft_noise_scale: float = 0.1
     n_lpf_radii: int = 50
+    mask_model: Optional[str] = None  # None → config.MASK_MODEL ("unet" | "none")
 
 
 @dataclass

@@ -515,6 +515,7 @@ def plot_fft_wavex_grid(
     conf_x: Optional[float] = None,
     conf_e: Optional[float] = None,
     p_energy: Optional[float] = None,
+    mask_kind: str = "polar",
 ) -> None:
     """WaveX-style polar FFT explanation figure (soft/hard + spectra).
 
@@ -536,11 +537,11 @@ def plot_fft_wavex_grid(
         (axes[0, 0], x_img, orig, None),
         (axes[0, 1], e_soft, soft, None),
         (axes[0, 2], e_hard, hard, None),
-        (axes[0, 3], m_soft_polar, "Soft polar mask", "inferno"),
+        (axes[0, 3], m_soft_polar, f"Soft {mask_kind} mask", "inferno"),
         (axes[1, 0], mag_x, "FFT log-mag (original)", "inferno"),
         (axes[1, 1], mag_soft, "FFT log-mag (soft)", "inferno"),
         (axes[1, 2], mag_hard, "FFT log-mag (hard)", "inferno"),
-        (axes[1, 3], m_hard_polar, "Hard polar mask", "inferno"),
+        (axes[1, 3], m_hard_polar, f"Hard {mask_kind} mask", "inferno"),
         (axes[2, 1], mask_full_soft, "Expanded soft mask", "inferno"),
         (axes[2, 2], mask_full_hard, "Expanded hard mask", "inferno"),
     ]
@@ -569,11 +570,12 @@ def plot_lpf_vs_greedy(
     delta_greedy_std: Optional[Sequence[float]] = None,
     p_energy: Optional[Sequence[float]] = None,
     p_energy_std: Optional[Sequence[float]] = None,
+    greedy_label: str = "greedy polar bins",
 ) -> None:
     """Δconf vs cutoff radius; right axis is circular-LPF energy as % of ||FFT(x)||²."""
     fig, ax = plt.subplots(figsize=(7.2, 4.4))
     ax.plot(radii, delta_lpf, lw=1.8, color="#4C78A8", label="circular low-pass")
-    ax.plot(radii, delta_greedy, lw=1.8, color="#E45756", label="greedy polar bins")
+    ax.plot(radii, delta_greedy, lw=1.8, color="#E45756", label=greedy_label)
     if delta_lpf_std is not None:
         m, s = np.asarray(delta_lpf), np.asarray(delta_lpf_std)
         ax.fill_between(radii, m - s, m + s, color="#4C78A8", alpha=0.18)

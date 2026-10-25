@@ -1,4 +1,5 @@
-# Polar FFT (Section 0) — only source of FFT λ and polar-bin settings.
+# Polar FFT (Section 0) — FFT λ and polar-bin settings.
+# Mask generator: config.py MASK_MODEL ("unet" | "none") or CLI --mask-model.
 # CLI overrides: --lam-act --lam-ce --lam-kl --lam-energy --lam-bin --lam-tv --lam-rob
 # Area loss is not used (polar-bin mean is not spectral energy).
 #

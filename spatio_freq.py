@@ -202,16 +202,18 @@ def run_overlay(args) -> None:
             m_f, m_f_prob, fblob = _load_pt_masks(fdir / "masks.pt", device)
             radial = int(fblob.get("radial_bins", 16) or 16)
             angular = int(fblob.get("angular_bins", 16) or 16)
-            m_f = m_f.reshape(1, 1, radial, angular)
-            m_f_prob = m_f_prob.reshape(1, 1, radial, angular)
             fourier = FourierPolarMasker(radial, angular).to(device)
+            kind = str(fblob.get("mask_kind") or "")
+            if kind != "spectrum" and not fourier.is_spectrum_mask(m_f, x.shape[-2], x.shape[-1]):
+                m_f = m_f.reshape(1, 1, radial, angular)
+                m_f_prob = m_f_prob.reshape(1, 1, radial, angular)
             e_f = fourier.construct_explanation(x, m_f)
             e_s = _grey_fill(x, m_s_hard)
             e_sf = _grey_fill(e_f, m_s_hard)
 
             p_spatial = mask_size(m_s_hard)
             coeff = fourier.fft2(x)
-            half_f = fourier.expand_polar_mask(m_f, x.shape[-2], x.shape[-1])
+            half_f = fourier.as_half_mask(m_f, x.shape[-2], x.shape[-1])
             p_energy = float(fourier.kept_energy_fraction(coeff, half_f).mean().item())
 
             met_sf = evaluate_explanation(

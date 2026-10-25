@@ -60,6 +60,23 @@ class FourierPolarMasker(nn.Module):
         self._index_cache[key] = flat_idx
         return flat_idx
 
+    def coeff_width(self, width: int) -> int:
+        return int(width) // 2 + 1
+
+    def is_spectrum_mask(self, m: torch.Tensor, height: int, width: int) -> bool:
+        """True if m is already a one-sided rFFT mask (H × W/2+1), not polar bins."""
+        return int(m.shape[-2]) == int(height) and int(m.shape[-1]) == self.coeff_width(width)
+
+    def as_half_mask(self, m: torch.Tensor, height: int, width: int) -> torch.Tensor:
+        """Accept polar (B,1,R,A) or spectrum (B,1,H,W_half); return (B,1,H,W_half)."""
+        if m.dim() == 2:
+            m = m.view(1, 1, *m.shape)
+        elif m.dim() == 3:
+            m = m.unsqueeze(1)
+        if self.is_spectrum_mask(m, height, width):
+            return m
+        return self.expand_polar_mask(m, height, width)
+
     def expand_polar_mask(self, m_polar: torch.Tensor, height: int, width: int) -> torch.Tensor:
         b = m_polar.shape[0]
         height, width = int(height), int(width)
@@ -86,7 +103,7 @@ class FourierPolarMasker(nn.Module):
 
     def construct_explanation(self, x: torch.Tensor, m_polar: torch.Tensor) -> torch.Tensor:
         coeff = self.fft2(x)
-        half = self.expand_polar_mask(m_polar, x.shape[-2], x.shape[-1])
+        half = self.as_half_mask(m_polar, x.shape[-2], x.shape[-1])
         return self.ifft2_real(coeff * half, signal_hw=x.shape[-2:])
 
     def perturb_explanation(
@@ -97,7 +114,7 @@ class FourierPolarMasker(nn.Module):
     ) -> torch.Tensor:
         """White-noise the dropped Fourier bins, then IFFT (WaveX perturb_explanation)."""
         coeff = self.fft2(x)
-        half = self.expand_polar_mask(m_polar, x.shape[-2], x.shape[-1])
+        half = self.as_half_mask(m_polar, x.shape[-2], x.shape[-1])
         coeff_std = coeff.abs().std().detach().clamp(min=1e-6)
         noise_real = torch.randn_like(coeff.real) * (noise_scale * coeff_std)
         noise_imag = torch.randn_like(coeff.imag) * (noise_scale * coeff_std)
@@ -151,6 +168,27 @@ class FourierPolarMasker(nn.Module):
             if float(accum.item()) >= target:
                 break
         return keep.view(1, 1, self.radial_bins, self.angular_bins)
+
+    def greedy_spectrum_mask_for_energy(
+        self,
+        scores: torch.Tensor,
+        coeff: torch.Tensor,
+        target_energy: float,
+    ) -> torch.Tensor:
+        """Keep highest-score rFFT bins until cumulative |coeff|² ≥ target_energy."""
+        energy = (coeff.abs() ** 2).sum(dim=1).reshape(-1)
+        sc = scores.reshape(-1)
+        if float(target_energy) <= 0:
+            return torch.zeros_like(scores)
+        order = torch.argsort(sc, descending=True)
+        keep = torch.zeros_like(sc)
+        accum = sc.new_zeros(())
+        for idx in order:
+            keep[idx] = 1.0
+            accum = accum + energy[idx]
+            if float(accum.item()) >= float(target_energy):
+                break
+        return keep.view_as(scores)
 
     def one_sided_to_full(self, tensor_one_sided: torch.Tensor, width: Optional[int] = None) -> torch.Tensor:
         w_half = int(tensor_one_sided.shape[-1])
