@@ -165,6 +165,39 @@ class FourierMaskNet(nn.Module):
         return torch.sigmoid(logits / temp)
 
 
+class TinyFourierMaskNet(nn.Module):
+    """One-skip polar mask net: 16/32 channels, then GAP → (R×A) sigmoid."""
+
+    def __init__(
+        self,
+        in_channels: int = 3,
+        radial_bins: int = 16,
+        angular_bins: int = 16,
+        temperature: float = 1.0,
+    ):
+        super().__init__()
+        self.radial_bins = int(radial_bins)
+        self.angular_bins = int(angular_bins)
+        self.temperature = float(temperature)
+        self.enc1 = _FEnc(in_channels, 16)
+        self.bottleneck = _fourier_conv_block(16, 32)
+        self.dec1 = _FDec(32, 16, 16)
+        self.global_pool = nn.AdaptiveAvgPool2d((1, 1))
+        self.polar_proj = nn.Linear(16, self.radial_bins * self.angular_bins)
+        nn.init.xavier_uniform_(self.polar_proj.weight, gain=0.1)
+        nn.init.zeros_(self.polar_proj.bias)
+
+    def forward(self, x: torch.Tensor) -> torch.Tensor:
+        p1, s1 = self.enc1(x)
+        b = self.bottleneck(p1)
+        d1 = self.dec1(b, s1)
+        bsz = x.shape[0]
+        pooled = self.global_pool(d1).view(bsz, -1)
+        logits = self.polar_proj(pooled).view(bsz, 1, self.radial_bins, self.angular_bins)
+        temp = max(self.temperature, 1e-6)
+        return torch.sigmoid(logits / temp)
+
+
 class SpectrumMask(nn.Module):
     """Learnable 1-channel mask on the rFFT half-spectrum, shared across RGB."""
 
@@ -181,7 +214,7 @@ def last_shared_layer(mask_net: nn.Module) -> nn.Module:
     """Last layer used by all decoder branches (for GradNorm-style balancing)."""
     if isinstance(mask_net, SpectrumMask):
         return mask_net
-    if isinstance(mask_net, FourierMaskNet):
+    if isinstance(mask_net, (FourierMaskNet, TinyFourierMaskNet)):
         return mask_net.dec1
     if isinstance(mask_net, UNetCSAE):
         return mask_net.dec1

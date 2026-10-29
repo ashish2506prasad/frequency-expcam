@@ -52,8 +52,8 @@ LR = 5e-5
 TEMPERATURE = 2.0
 MASK_THRESH = 0.5
 ROB_K_BACKGROUNDS = 3
-# "unet" = FourierMaskNet polar bins; "none" = one shared mask on the rFFT half-spectrum.
-MASK_MODEL = "unet"
+# "unet" | "tiny_unet" (polar bins) | "none" (direct rFFT half-spectrum mask).
+MASK_MODEL = "none"
 
 DEFAULT_LAMBDAS = {
     "act": 10.0,

@@ -29,7 +29,7 @@ from losses import (
     layer_act_loss,
 )
 from metrics import class_confidence, confidence_delta, ef1_new_version
-from models import FourierMaskNet, SpectrumMask
+from models import FourierMaskNet, SpectrumMask, TinyFourierMaskNet
 from train import TrainConfig, TrainResult, log, seed_all
 
 
@@ -60,16 +60,27 @@ def train_mask_fft(bundle: ClassifierBundle, x: torch.Tensor, cfg: TrainConfig) 
     fourier = FourierPolarMasker(radial, angular).to(device)
     model_name = str(getattr(cfg, "mask_model", None) or MASK_MODEL).strip().lower()
     use_spectrum = model_name in ("none", "pixel", "direct", "spectrum")
+    use_tiny = model_name in ("tiny_unet", "tinyunet", "tiny_unet_csae")
     if use_spectrum:
         mask_net = SpectrumMask(int(x.shape[-2]), int(x.shape[-1])).to(device)
         arch = "SpectrumMask"
+        resolved_model = "none"
+    elif use_tiny:
+        mask_net = TinyFourierMaskNet(
+            in_channels=3, radial_bins=radial, angular_bins=angular, temperature=temp
+        ).to(device)
+        arch = "TinyFourierMaskNet_polar"
+        resolved_model = "tiny_unet"
     elif model_name in ("unet", "polar"):
         mask_net = FourierMaskNet(
             in_channels=3, radial_bins=radial, angular_bins=angular, temperature=temp
         ).to(device)
         arch = "FourierMaskNet_polar"
+        resolved_model = "unet"
     else:
-        raise ValueError(f"Unknown mask_model={model_name!r}; expected 'unet' or 'none'")
+        raise ValueError(
+            f"Unknown mask_model={model_name!r}; expected 'unet', 'tiny_unet', or 'none'"
+        )
     mask_net.train()
     opt = torch.optim.Adam(mask_net.parameters(), lr=cfg.lr)
 
@@ -290,7 +301,7 @@ def train_mask_fft(bundle: ClassifierBundle, x: torch.Tensor, cfg: TrainConfig) 
         noise_scale=noise_scale,
         radial_bins=radial,
         angular_bins=angular,
-        mask_model="none" if use_spectrum else "unet",
+        mask_model=resolved_model,
     )
 
 

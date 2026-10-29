@@ -100,9 +100,12 @@ def add_common_args(p: argparse.ArgumentParser) -> argparse.ArgumentParser:
     )
     p.add_argument(
         "--mask-model",
-        choices=("unet", "none"),
+        choices=("unet", "tiny_unet", "none"),
         default=None,
-        help=f"FFT mask: unet (polar bins) or none (direct rFFT spectrum). Default: {MASK_MODEL} from config.py.",
+        help=(
+            "FFT mask: unet (polar bins), tiny_unet (one-skip polar), "
+            f"or none (direct rFFT spectrum). Default: {MASK_MODEL} from config.py."
+        ),
     )
     return p
 
